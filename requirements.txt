@@ -1,0 +1,10 @@
+aiohttp
+pandas
+pynput
+pyperclip
+PyYAML
+recordclass
+Requests
+requests_oauthlib
+requests_client
+influxdb_client

@@ -1,0 +1,11 @@
+cache_all: 'false'
+hide_existing: 'false'
+
+source_hub: 'Amarr'
+source_order_type: 'sell'
+
+dest_hub: 'Jita'
+dest_order_type: 'sell'
+
+days_history: '7'
+bogus_threshold: '10'

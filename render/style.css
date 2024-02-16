@@ -1,0 +1,40 @@
+body {
+    background-color: #111111;
+    color: #cccccc;
+    font-family: Arial, sans-serif;
+}
+
+.dataframe *, .dataframe {
+    border: none;
+    border-collapse: collapse;
+}
+
+.dataframe thead tr {
+    text-align: center !important;
+}
+
+.dataframe thead tr th:nth-child(2) {
+    visibility: hidden;
+}
+
+.dataframe tbody tr th {
+    text-align: right;
+}
+
+.dataframe tbody tr {
+    border-bottom: 1px solid #555555;
+}
+
+.dataframe tbody tr:nth-child(even) {
+    background: #202020;
+}
+
+.dataframe tbody tr td:nth-child(2) {
+    color: #555555;
+    padding-right: 10px;
+    padding-left: 5px;
+}
+
+.dataframe tbody tr td {
+    text-align: right;
+}
