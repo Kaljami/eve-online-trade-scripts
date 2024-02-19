@@ -86,7 +86,7 @@ def temp_dont_cycle_sessions(session_file):
             #picked_session_id = int(picked_session_id)
             #print ("picked:",picked_session_id)
             picked_file = session_file
-            file_path = f'{sessions_directory}/{picked_file}'
+            file_path = f'{sessions_directory_stats}/{picked_file}'
         except Exception as e:
             print('Error with input') # TODO add better error handling
             return False

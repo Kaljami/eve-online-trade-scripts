@@ -164,6 +164,7 @@ cython_debug/
 typeIDs.yaml
 keys.txt
 *_test*.py
+*_test*.ipynb
 result.json
 cache/*
 session_data.json
@@ -177,3 +178,4 @@ temp_scopes.txt
 test_ifdb.ipynb
 test_influxbd.py
 influxdb_settings.txt
+influxdb_v1_settings.txt

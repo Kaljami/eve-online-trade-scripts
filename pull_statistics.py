@@ -4,8 +4,12 @@ import pandas as pd
 from sde_utils import get_item_names
 from price_differences import get_prices_from_station
 import influxdb_client
-from influxdb_client import InfluxDBClient, Point, WritePrecision
-from influxdb_client.client.write_api import SYNCHRONOUS
+#from influxdb_client import InfluxDBClient, Point, WritePrecision
+#from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb import InfluxDBClient
+import logging
+
+logging.basicConfig(filename='logs/latest.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def cycle_sso(session_file):
@@ -49,21 +53,23 @@ def get_character_orders():
 
     
 def get_pageful_of_assets(session, character_assets_url, page):
+    logging.debug('Starting get_pageful_of_assets')
     print(f"grabbing pageful of assets, page number {page}")
     params = {'page': page}
     response = session.get(character_assets_url, params=params) # TODO why does something around here fail randomly? Add better error reporting.
-    #print(f"Response status: {response.status_code}")
-    #print(f"Response headers: {response.headers}")
+    logging.debug(f"Response status: {response.status_code}")
+    logging.debug(f"Response headers: {response.headers}")
     try:
         response_json = response.json()
-        #print(f"Response JSON: {response_json}")
+        logging.debug(f"Response JSON: {response_json}")
         return response_json
     except Exception as json_error:
         print(f"Error parsing JSON: {json_error}")
+        logging.debug(f"Error parsing JSON: {json_error}")
         return None
 
 def get_all_assets(session, character_assets_url, pages):
-    print(f"task is to get {pages} of assets from {character_assets_url}")
+    print(f"task is to get {pages} pages of assets from {character_assets_url}")
     assets_data_list = []  # List to store results from each page
     for page in range(1, pages + 1):
         page_data = get_pageful_of_assets(session, character_assets_url, page)
@@ -147,9 +153,9 @@ def get_character_wallet():
     print(character_wallet_data)
     return character_wallet_data
 
-def get_jita_prices():
+def get_jita_prices(cached):
     prices_dataframe = pd.DataFrame()
-    jita_prices = get_prices_from_station("Jita", "sell", True) #set False to get updated prices
+    jita_prices = get_prices_from_station("Jita", "sell", cached) #set False to get updated prices
     prices_dataframe['Jita price'] = jita_prices
     print("Jita price data downloaded")
     #print(str(prices_dataframe))
@@ -165,37 +171,43 @@ def get_average_prices():
     return avg_prices_dataframe
 
 def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value):
-    data = {'character_id': [character_id], 
-            'character_name': [character_name], 
+    data = {#'character_id': [character_id], 
+            #'character_name': [character_name], 
             'character_wallet_balance': [character_wallet_balance], 
             'character_asset_value': [character_asset_value], 
-            'character_industry_value': [character_industry_value],
-            'character_sell_order_value': [character_sell_order_value],
+            'character_industry_value': [float(character_industry_value)],
+            'character_sell_order_value': [float(character_sell_order_value)],
             'character_buy_order_value': [float(character_buy_order_value)],
             }
-    
-    point = (
-        Point("character_data")
-        .tag("character_id", character_id)
-        .tag("character_name", character_name)
-        .field("character_wallet_balance", character_wallet_balance)
-        .field("character_asset_value", character_asset_value)
-        .field("character_industry_value", float(character_industry_value))
-        .field("character_sell_order_value", float(character_sell_order_value))
-        .field("character_buy_order_value", float(character_buy_order_value))
-    )
-    
     summary_dataframe = pd.DataFrame(data)
     print(str(summary_dataframe))
-    return (point)
+    return (summary_dataframe)
 
-def write_to_influxdb():
-    def read_influxdb_settings(file_path='influxdb_settings.txt'):
+def convert_dataframe_to_influxdb_json(df, measurement, tags, time_column='time'):
+
+    if time_column not in df.columns:
+        df[time_column] = pd.to_datetime('now', utc=True)
+
+    # Convert DataFrame to InfluxDB JSON format
+    json_body = []
+    for _, row in df.iterrows():
+        point = {
+            "measurement": measurement,
+            "tags": tags,
+            "time": row[time_column],
+            "fields": {column: row[column] for column in df.columns if column != time_column}
+        }
+        json_body.append(point)
+    logging.debug(f"sent json to influxdb: {json_body}")
+    return json_body
+
+def write_to_influxdb_v1(df, measurement, tags, time_column='time'):
+    def read_influxdb_settings(file_path='influxdb_v1_settings.txt'):
         keys = {}
         try:
             with open(file_path, 'r') as file:
                 for line in file:
-                    key, value = line.strip().split('===')
+                    key, value = line.strip().split('=')
                     keys[key] = value
             return keys
         except FileNotFoundError:
@@ -204,47 +216,47 @@ def write_to_influxdb():
 
     influxdb_settings = read_influxdb_settings()
     if influxdb_settings:
-        bucket = influxdb_settings.get('bucket')
-        org = influxdb_settings.get('org')
-        token = influxdb_settings.get('token')
-        url = influxdb_settings.get('url')
+        host = influxdb_settings.get('host')
+        port = influxdb_settings.get('port')
+        database = influxdb_settings.get('database')
+        username = influxdb_settings.get('username')
+        password = influxdb_settings.get('password')
 
-        if bucket:
-            print("Influxdb settings found, proceeding.")
-        else:
-            print("Error: missing settings in influxdb_settings.txt")
+    
+    json_body = convert_dataframe_to_influxdb_json(df, measurement, tags, time_column)
+    # Connect to InfluxDB and write the data
+    client = InfluxDBClient(host=host, port=port, database=database)
+    client.write_points(json_body)
 
-    client = influxdb_client.InfluxDBClient(
-        url = url,
-        token = token,
-        org = org
-    )
-    point = create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value)
-    
-    write_api = client.write_api(write_options=SYNCHRONOUS)
-    write_api.write(bucket=bucket, org=org, record=point)
-    
+    print("Data successfully written to InfluxDB.")
+
+
+
 def rotate_all_sessions():
     sessions_directory_stats = 'sessions_stats'
     session_files = [f for f in os.listdir(sessions_directory_stats) if f.endswith('.json')]
     print (session_files)
     #sso_session = sso_utils.temp_test_oauth_session()
+    char_index = 0
 
     for session_file in session_files:
+        char_index += 1
         global character_id, character_name, prices_dataframe, avg_prices_dataframe, character_sell_order_value, character_buy_order_value, character_asset_value, character_industry_value, character_wallet_balance
         print ("Using session file", session_file)
         cycle_sso(session_file)
         character_id = sso_utils.get_character_id(sso_session)
         character_name = sso_utils.get_character(sso_session)
         print(f'SSO Status: {f"Logged in as {character_name}" if character_name else "Not logged in"}')
-        prices_dataframe = get_jita_prices() #TODO: only get live prices on the first round around and use cache for next ones
-        avg_prices_dataframe = get_average_prices()
+        if char_index == 1:
+            prices_dataframe = get_jita_prices(True) #only get live prices on the first round
+            avg_prices_dataframe = get_average_prices()
 
         character_sell_order_value, character_buy_order_value = get_character_orders()
         character_asset_value = get_character_assets(avg_prices_dataframe)
         character_industry_value = get_character_industry_jobs(prices_dataframe)
         character_wallet_balance = get_character_wallet()
-        write_to_influxdb()
+        df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value)
+        write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
 rotate_all_sessions()
 
@@ -252,6 +264,10 @@ rotate_all_sessions()
 # plex wallet (is it possible?)
 # implants
 # wallet transactions to track most traded items etc
+# contract value
+# mining ledger
+#   in grafana: daily and monthly cumulative mining amounts
+#   separate moon mining from others to estimate tax bill 
 
 
 
