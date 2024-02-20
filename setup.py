@@ -2,7 +2,7 @@ import os
 
 def create_directories_and_files():
     # Define directory and file names
-    directories = ['sessions', 'sessions_stats', 'cache']
+    directories = ['sessions', 'sessions_stats', 'cache', 'logs']
     files = ['keys_all_scopes.txt', 'influxdb_settings.txt']
 
     # Create directories

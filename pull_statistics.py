@@ -8,6 +8,7 @@ import influxdb_client
 #from influxdb_client.client.write_api import SYNCHRONOUS
 from influxdb import InfluxDBClient
 import logging
+import time
 
 logging.basicConfig(filename='logs/latest.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -56,7 +57,15 @@ def get_pageful_of_assets(session, character_assets_url, page):
     logging.debug('Starting get_pageful_of_assets')
     print(f"grabbing pageful of assets, page number {page}")
     params = {'page': page}
-    response = session.get(character_assets_url, params=params) # TODO why does something around here fail randomly? Add better error reporting.
+    
+    max_retries = 5  # Define the maximum number of retries
+    retry_delay = 1  # Define the delay between retries in seconds
+    # retry if response is 504 timeout
+    for i in range(max_retries):
+        response = session.get(character_assets_url, params=params)
+        if response.status_code != 504:  
+            break
+        time.sleep(retry_delay)
     logging.debug(f"Response status: {response.status_code}")
     logging.debug(f"Response headers: {response.headers}")
     try:
@@ -144,6 +153,24 @@ def get_character_industry_jobs(prices_dataframe):
         print ("no industry jobs found")
         return 0
     
+def get_character_implants():
+    clones_url= f"https://esi.evetech.net/latest/characters/{character_id}/clones/"
+    clones_response = sso_session.get(clones_url)
+    clones_data = clones_response.json()
+    if clones_data:
+        print("character clones:", clones_data)
+        implants = [implant for clone in clones_data['jump_clones'] for implant in clone['implants']]
+        # Create a DataFrame from the implants list
+        clones_df = pd.DataFrame(implants, columns=['implant'])
+        merged_clones_df = clones_df.merge(prices_dataframe, left_on='implant', right_index=True)
+        # Calculate the total sum for all rows
+        total_sum = merged_clones_df['Jita price'].sum()
+        print(str(merged_clones_df))
+        print(f"Total clone implant value: {total_sum}")
+        return total_sum
+    else:
+        print ("no clones found")
+        return 0
 
 def get_character_wallet():
     character_wallet_url = f'https://esi.evetech.net/latest/characters/{character_id}/wallet/'
@@ -170,7 +197,7 @@ def get_average_prices():
     print(str(avg_prices_dataframe))
     return avg_prices_dataframe
 
-def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value):
+def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants):
     data = {#'character_id': [character_id], 
             #'character_name': [character_name], 
             'character_wallet_balance': [character_wallet_balance], 
@@ -178,6 +205,7 @@ def create_summary_dataframe(character_id, character_name, character_wallet_bala
             'character_industry_value': [float(character_industry_value)],
             'character_sell_order_value': [float(character_sell_order_value)],
             'character_buy_order_value': [float(character_buy_order_value)],
+            'character_implants': [float(character_implants)],
             }
     summary_dataframe = pd.DataFrame(data)
     print(str(summary_dataframe))
@@ -241,7 +269,7 @@ def rotate_all_sessions():
 
     for session_file in session_files:
         char_index += 1
-        global character_id, character_name, prices_dataframe, avg_prices_dataframe, character_sell_order_value, character_buy_order_value, character_asset_value, character_industry_value, character_wallet_balance
+        global character_id, character_name, prices_dataframe, avg_prices_dataframe, character_sell_order_value, character_buy_order_value, character_asset_value, character_industry_value, character_wallet_balance, character_implants
         print ("Using session file", session_file)
         cycle_sso(session_file)
         character_id = sso_utils.get_character_id(sso_session)
@@ -255,7 +283,8 @@ def rotate_all_sessions():
         character_asset_value = get_character_assets(avg_prices_dataframe)
         character_industry_value = get_character_industry_jobs(prices_dataframe)
         character_wallet_balance = get_character_wallet()
-        df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value)
+        character_implants = get_character_implants()
+        df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants)
         write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
 rotate_all_sessions()
