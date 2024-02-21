@@ -8,3 +8,7 @@ Requests
 requests_oauthlib
 requests_client
 influxdb_client
+mysql-connector-python
+python-dotenv
+sqlalchemy
+pymysql

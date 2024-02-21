@@ -10,8 +10,21 @@ from influxdb import InfluxDBClient
 import logging
 import time
 import mysql.connector
+from dotenv import load_dotenv
 
 logging.basicConfig(filename='logs/latest.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+load_dotenv()
+
+influxdb_host = os.getenv("influxdb_host")
+influxdb_port = os.getenv("influxdb_port")
+influxdb_database = os.getenv("influxdb_database")
+influxdb_username = os.getenv("influxdb_username")
+influxdb_password = os.getenv("influxdb_password")
+
+mysql_user = os.getenv("mysql_user")
+mysql_password = os.getenv("mysql_password")
+mysql_host = os.getenv("mysql_host")
+mysql_database = os.getenv("mysql_database")
 
 
 def cycle_sso(session_file):
@@ -182,12 +195,8 @@ def get_character_mining():
     if mining_data:
         #print(mining_response.headers)
         #print(mining_data)
-        db_user = None
-        db_password = None
-        db_host = None
-        db_database = None
-        cnx = mysql.connector.connect(user=db_user, password=db_password,
-                                      host=db_host, database=db_database)
+        cnx = mysql.connector.connect(user=mysql_user, password=mysql_password,
+                                      host=mysql_host, database=mysql_database)
         cursor = cnx.cursor()
         # Iterate over the mining data and insert each record into the MySQL database
         # If a recordd already exists, update it, to prevent duplicates
@@ -263,30 +272,9 @@ def convert_dataframe_to_influxdb_json(df, measurement, tags, time_column='time'
     return json_body
 
 def write_to_influxdb_v1(df, measurement, tags, time_column='time'):
-    def read_influxdb_settings(file_path='influxdb_v1_settings.txt'):
-        keys = {}
-        try:
-            with open(file_path, 'r') as file:
-                for line in file:
-                    key, value = line.strip().split('=')
-                    keys[key] = value
-            return keys
-        except FileNotFoundError:
-            print(f"File '{file_path}' not found.")
-            return None
-
-    influxdb_settings = read_influxdb_settings()
-    if influxdb_settings:
-        host = influxdb_settings.get('host')
-        port = influxdb_settings.get('port')
-        database = influxdb_settings.get('database')
-        username = influxdb_settings.get('username')
-        password = influxdb_settings.get('password')
-
-    
     json_body = convert_dataframe_to_influxdb_json(df, measurement, tags, time_column)
     # Connect to InfluxDB and write the data
-    client = InfluxDBClient(host=host, port=port, database=database)
+    client = InfluxDBClient(host=influxdb_host, port=influxdb_port, database=influxdb_database)
     client.write_points(json_body)
 
     print("Data successfully written to InfluxDB.")

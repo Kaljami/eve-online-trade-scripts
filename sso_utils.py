@@ -2,6 +2,7 @@ import webbrowser
 import os
 import json
 from requests_oauthlib import OAuth2Session
+from dotenv import load_dotenv
 
 ### This is a shitshow and needs to be cleaned up
 
@@ -13,27 +14,16 @@ sessions_directory_stats = 'sessions_stats'
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = 'True' # seriously don't do this lol. Possibly throws an error because it tries to open the callback url https://localhost but there's no certificate? 
 
-def read_sso_keys(file_path='keys_all_scopes.txt'):
-    keys = {}
-    try:
-        with open(file_path, 'r') as file:
-            for line in file:
-                key, value = line.strip().split('=')
-                keys[key] = value
-        return keys
-    except FileNotFoundError:
-        print(f"SSO key file '{file_path}' not found.")
-        return None
+load_dotenv()
 
-sso_keys = read_sso_keys()
-if sso_keys:
-    CLIENT_ID = sso_keys.get('CLIENT_ID')
-    CLIENT_SECRET = sso_keys.get('CLIENT_SECRET')
 
-    if CLIENT_ID and CLIENT_SECRET:
-        print("CLIENT_ID and CLIENT_SECRET found, proceeding.")
-    else:
-        print("Error: Missing SSO client keys in the file keys.txt")
+CLIENT_ID = os.getenv("EVE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("EVE_CLIENT_SECRET")
+
+if CLIENT_ID and CLIENT_SECRET:
+    print("CLIENT_ID and CLIENT_SECRET found, proceeding.")
+else:
+    print("Error: Missing SSO client keys in the file .env (maybe)")
 
 
 def read_session_data(sessions_directory):
