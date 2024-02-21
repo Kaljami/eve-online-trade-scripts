@@ -9,6 +9,7 @@ import influxdb_client
 from influxdb import InfluxDBClient
 import logging
 import time
+import mysql.connector
 
 logging.basicConfig(filename='logs/latest.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -43,10 +44,10 @@ def get_character_orders():
         buy_order_total_value = buy_orders_f['escrow'].sum()
         print("Buy order total value:", buy_order_total_value)
         
-        print("Sell orders:")
-        print(str(sell_orders_f))
-        print("Buy orders:")
-        print(str(buy_orders_f))
+        #print("Sell orders:")
+        #print(str(sell_orders_f))
+        #print("Buy orders:")
+        #print(str(buy_orders_f))
         return sell_order_total_value, buy_order_total_value
     else:
         print ("no market orders found")
@@ -65,6 +66,8 @@ def get_pageful_of_assets(session, character_assets_url, page):
         response = session.get(character_assets_url, params=params)
         if response.status_code != 504:  
             break
+        print("Got timeout when grabbing assets. Retrying...")
+        logging.debug(f"Got timeout when grabbing assets. Retrying...")
         time.sleep(retry_delay)
     logging.debug(f"Response status: {response.status_code}")
     logging.debug(f"Response headers: {response.headers}")
@@ -93,8 +96,8 @@ def asset_getter_really(sso_session, character_assets_url, n_asset_pages):
     try:
         # Concatenate all DataFrames into a single DataFrame
         merged_df = pd.concat(assets_data_list, ignore_index=True)
-        print("Merged DataFrame:")
-        print(merged_df)
+        #print("Merged DataFrame:")
+        #print(merged_df)
         return merged_df
     except ValueError as ve:
         print(f"ValueError: {ve}")
@@ -123,9 +126,9 @@ def get_character_assets(prices_dataframe):
     merged_asset_df['total_value'] = merged_asset_df['quantity'] * merged_asset_df['average_price']
     merged_asset_df['type_name'] = merged_asset_df['type_id'].map(get_item_names())
     total_asset_value = merged_asset_df['total_value'].sum()
-    print("Assets:")
-    print(str(merged_asset_df)) #only up to 1000, is this paginated? 
-    print(f"Total asset value: {total_asset_value}")
+    #print("Assets:")
+    #print(str(merged_asset_df))
+    #print(f"Total asset value: {total_asset_value}")
     #merged_asset_df.to_csv('merged_asset_df.csv', index=False)
     #merged_asset_df.to_excel('merged_asset_df.xlsx')
     return total_asset_value
@@ -143,48 +146,78 @@ def get_character_industry_jobs(prices_dataframe):
         # get value of industry job outputs
         # Merge price data on the 'product_type_id' field
         merged_industry_df = character_industry_jobs.merge(prices_dataframe, left_on='product_type_id', right_index=True)
-        # Multiply the 'runs' column by the 'Jita price' column
-        merged_industry_df['total_price'] = merged_industry_df['runs'] * merged_industry_df['Jita price']
+        # Multiply the 'runs' column by the 'jita_price' column
+        merged_industry_df['total_price'] = merged_industry_df['runs'] * merged_industry_df['jita_price']
         # Calculate the total sum for all rows
         total_sum = merged_industry_df['total_price'].sum()
-        print(f"Total industry job outputs: {total_sum}")
+        #print(f"Total industry job outputs: {total_sum}")
         return total_sum
     else:
         print ("no industry jobs found")
         return 0
     
-def get_character_implants():
+def get_character_implants(): #TODO add the current clone implants to this
     clones_url= f"https://esi.evetech.net/latest/characters/{character_id}/clones/"
     clones_response = sso_session.get(clones_url)
     clones_data = clones_response.json()
     if clones_data:
-        print("character clones:", clones_data)
+        #print("character clones:", clones_data)
         implants = [implant for clone in clones_data['jump_clones'] for implant in clone['implants']]
         # Create a DataFrame from the implants list
         clones_df = pd.DataFrame(implants, columns=['implant'])
         merged_clones_df = clones_df.merge(prices_dataframe, left_on='implant', right_index=True)
         # Calculate the total sum for all rows
-        total_sum = merged_clones_df['Jita price'].sum()
-        print(str(merged_clones_df))
+        total_sum = merged_clones_df['jita_price'].sum()
+        #print(str(merged_clones_df))
         print(f"Total clone implant value: {total_sum}")
         return total_sum
     else:
         print ("no clones found")
         return 0
 
+def get_character_mining():
+    mining_url = f'https://esi.evetech.net/latest/characters/{character_id}/mining/'
+    mining_response = sso_session.get(mining_url)
+    mining_data = mining_response.json()
+    if mining_data:
+        #print(mining_response.headers)
+        #print(mining_data)
+        db_user = None
+        db_password = None
+        db_host = None
+        db_database = None
+        cnx = mysql.connector.connect(user=db_user, password=db_password,
+                                      host=db_host, database=db_database)
+        cursor = cnx.cursor()
+        # Iterate over the mining data and insert each record into the MySQL database
+        # If a recordd already exists, update it, to prevent duplicates
+        for record in mining_data:
+            add_mining = ("""
+                INSERT INTO Mining 
+                (date, quantity, solar_system_id, type_id, character_id, character_name) 
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                quantity = IF(VALUES(quantity) > quantity, VALUES(quantity), quantity)
+            """)
+            data_mining = (record['date'], record['quantity'], record['solar_system_id'], record['type_id'], character_id, character_name)
+            cursor.execute(add_mining, data_mining)
+        cnx.commit()
+        cursor.close()
+        cnx.close()
+
 def get_character_wallet():
     character_wallet_url = f'https://esi.evetech.net/latest/characters/{character_id}/wallet/'
     character_wallet_response = sso_session.get(character_wallet_url)
     character_wallet_data = character_wallet_response.json()
-    print("Wallet balance:")
-    print(character_wallet_data)
+    #print("Wallet balance:")
+    #print(character_wallet_data)
     return character_wallet_data
 
 def get_jita_prices(cached):
     prices_dataframe = pd.DataFrame()
     jita_prices = get_prices_from_station("Jita", "sell", cached) #set False to get updated prices
-    prices_dataframe['Jita price'] = jita_prices
-    print("Jita price data downloaded")
+    prices_dataframe['jita_price'] = jita_prices
+    print("jita_price data downloaded")
     #print(str(prices_dataframe))
     return prices_dataframe
 
@@ -194,7 +227,7 @@ def get_average_prices():
     avg_prices_data = avg_prices_response.json()
     avg_prices_dataframe = pd.DataFrame(avg_prices_data)
     avg_prices_dataframe.set_index('type_id', inplace=True)
-    print(str(avg_prices_dataframe))
+    #print(str(avg_prices_dataframe))
     return avg_prices_dataframe
 
 def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants):
@@ -208,7 +241,7 @@ def create_summary_dataframe(character_id, character_name, character_wallet_bala
             'character_implants': [float(character_implants)],
             }
     summary_dataframe = pd.DataFrame(data)
-    print(str(summary_dataframe))
+    #print(str(summary_dataframe))
     return (summary_dataframe)
 
 def convert_dataframe_to_influxdb_json(df, measurement, tags, time_column='time'):
@@ -264,7 +297,6 @@ def rotate_all_sessions():
     sessions_directory_stats = 'sessions_stats'
     session_files = [f for f in os.listdir(sessions_directory_stats) if f.endswith('.json')]
     print (session_files)
-    #sso_session = sso_utils.temp_test_oauth_session()
     char_index = 0
 
     for session_file in session_files:
@@ -284,6 +316,7 @@ def rotate_all_sessions():
         character_industry_value = get_character_industry_jobs(prices_dataframe)
         character_wallet_balance = get_character_wallet()
         character_implants = get_character_implants()
+        get_character_mining()
         df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants)
         write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
@@ -297,6 +330,9 @@ rotate_all_sessions()
 # mining ledger
 #   in grafana: daily and monthly cumulative mining amounts
 #   separate moon mining from others to estimate tax bill 
+# TODO generate a table of refined value of each ore type and store in mysql
 
-
-
+# TODO move all variables to .env: 
+# eve SSO keys
+# influxdb
+# mysql

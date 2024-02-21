@@ -179,3 +179,8 @@ test_ifdb.ipynb
 test_influxbd.py
 influxdb_settings.txt
 influxdb_v1_settings.txt
+static/categoryIDs.yaml
+static/groupIDs.yaml
+static/typeIDs.json
+static/typeMaterials.json
+static/typeMaterials.yaml

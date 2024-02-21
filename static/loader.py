@@ -17,3 +17,5 @@ with open('sde_sizes.pkl', 'wb+') as fp:
      }
  d = {typeID: packagedVols.get(typeID, contents.get('volume', 0)) for typeID, contents in data.items()}
  pickle.dump(d, fp)
+
+# TODO move this to setup.py

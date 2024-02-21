@@ -64,7 +64,7 @@ def cycle_sessions(sessions_directory):
             picked_file = session_files[picked_session_id]
             file_path = f'{sessions_directory}/{picked_file}'
         except Exception as e:
-            print('Error with input') # TODO add better error handling
+            print('Error with input.', e)
             return False
     
     
@@ -88,7 +88,7 @@ def temp_dont_cycle_sessions(session_file):
             picked_file = session_file
             file_path = f'{sessions_directory_stats}/{picked_file}'
         except Exception as e:
-            print('Error with input') # TODO add better error handling
+            print('Error with input.', e)
             return False
     
     

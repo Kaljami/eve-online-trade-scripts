@@ -10,7 +10,7 @@ from price_differences import get_prices_from_station, get_ungrouped_prices_from
 
 
 
-### TODO: 
+### basically a duplicate of price_differences.py. There is probably a better way to do this.  
 # give penalty score for competing sellers if settings.dest_order_type == sell
 # Add sorting to output html. Maybe output as excel or csv? 
 # Maybe add those variables below to settings? 
