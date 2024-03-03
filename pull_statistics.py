@@ -11,6 +11,7 @@ import logging
 import time
 import mysql.connector
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
 
 logging.basicConfig(filename='logs/latest.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
@@ -25,6 +26,9 @@ mysql_user = os.getenv("mysql_user")
 mysql_password = os.getenv("mysql_password")
 mysql_host = os.getenv("mysql_host")
 mysql_database = os.getenv("mysql_database")
+
+
+engine = create_engine(f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}')
 
 
 def cycle_sso(session_file):
@@ -135,7 +139,8 @@ def get_character_assets(prices_dataframe):
         print(f"Exception during get_character_assets: {e}")           
  
     # calculate total asset value
-    merged_asset_df.loc[merged_asset_df['is_blueprint_copy'] == True, 'average_price'] =  0
+    if 'is_blueprint_copy' in merged_asset_df.columns:
+        merged_asset_df.loc[merged_asset_df['is_blueprint_copy'] == True, 'average_price'] =  0
     merged_asset_df['total_value'] = merged_asset_df['quantity'] * merged_asset_df['average_price']
     merged_asset_df['type_name'] = merged_asset_df['type_id'].map(get_item_names())
     total_asset_value = merged_asset_df['total_value'].sum()
@@ -222,6 +227,52 @@ def get_character_wallet():
     #print(character_wallet_data)
     return character_wallet_data
 
+def get_character_journal():
+    from datetime import datetime
+    journal_url = f'https://esi.evetech.net/latest/characters/{character_id}/wallet/journal/'
+    response = sso_session.get(journal_url)
+    journal = response.json()
+    #print (response.headers)
+    #print ("journal:", journal)
+    journal_dataframe = pd.DataFrame(journal)
+    #print(journal_dataframe)
+    journal_dataframe['date'] = pd.to_datetime(journal_dataframe['date'])
+    journal_dataframe['date'] = journal_dataframe['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    journal_dataframe['character_id'] = character_id
+    journal_dataframe['character_name'] = character_name
+    #journal_dataframe.to_sql('journal', con=engine, if_exists='append', index=False)
+    existing_entries_query = "SELECT id FROM journal"
+    existing_entries = pd.read_sql(existing_entries_query, con=engine)
+    #journal_dataframe.drop_duplicates(subset='id', keep='first', inplace=True)
+    new_entries = journal_dataframe[~journal_dataframe['id'].isin(existing_entries['id'])]
+    new_entries.to_sql('journal', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
+    print(f"Wallet journal for {character_name} saved in MySQL")
+
+def get_character_transactions():
+    from datetime import datetime
+    transactions_url = f'https://esi.evetech.net/latest/characters/{character_id}/wallet/transactions/'
+    response = sso_session.get(transactions_url)
+    transactions = response.json()
+    if transactions: 
+        #print (response.headers)
+        #print ("transactions:", transactions)
+        transactions_dataframe = pd.DataFrame(transactions)
+        #print(f"Transactions for {character_name} {character_id}:")
+        #print(transactions_dataframe)
+        transactions_dataframe['date'] = pd.to_datetime(transactions_dataframe['date'])
+        transactions_dataframe['date'] = transactions_dataframe['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        transactions_dataframe['character_id'] = character_id
+        transactions_dataframe['character_name'] = character_name
+        #print(transactions_dataframe)
+        existing_entries_query = "SELECT journal_ref_id FROM transactions"
+        existing_entries = pd.read_sql(existing_entries_query, con=engine)
+        new_entries = transactions_dataframe[~transactions_dataframe['journal_ref_id'].isin(existing_entries['journal_ref_id'])]
+        new_entries.to_sql('transactions', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
+        print(f"Market transactions for {character_name} saved in MySQL")
+    else: 
+        print(f"No market transactions found for {character_name}")
+
+
 def get_jita_prices(cached):
     prices_dataframe = pd.DataFrame()
     jita_prices = get_prices_from_station("Jita", "sell", cached) #set False to get updated prices
@@ -287,7 +338,7 @@ def rotate_all_sessions():
     print (session_files)
     char_index = 0
 
-    for session_file in session_files:
+    for session_file in session_files: #TODO add tqdm progress bar
         char_index += 1
         global character_id, character_name, prices_dataframe, avg_prices_dataframe, character_sell_order_value, character_buy_order_value, character_asset_value, character_industry_value, character_wallet_balance, character_implants
         print ("Using session file", session_file)
@@ -296,7 +347,7 @@ def rotate_all_sessions():
         character_name = sso_utils.get_character(sso_session)
         print(f'SSO Status: {f"Logged in as {character_name}" if character_name else "Not logged in"}')
         if char_index == 1:
-            prices_dataframe = get_jita_prices(True) #only get live prices on the first round
+            prices_dataframe = get_jita_prices(False) #only get live prices on the first round
             avg_prices_dataframe = get_average_prices()
 
         character_sell_order_value, character_buy_order_value = get_character_orders()
@@ -305,6 +356,8 @@ def rotate_all_sessions():
         character_wallet_balance = get_character_wallet()
         character_implants = get_character_implants()
         get_character_mining()
+        get_character_journal()
+        get_character_transactions()
         df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants)
         write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
@@ -312,15 +365,7 @@ rotate_all_sessions()
 
 # other data to get:
 # plex wallet (is it possible?)
-# implants
+# implants currently in head
 # wallet transactions to track most traded items etc
+    # should item names be added to the same table? 
 # contract value
-# mining ledger
-#   in grafana: daily and monthly cumulative mining amounts
-#   separate moon mining from others to estimate tax bill 
-# TODO generate a table of refined value of each ore type and store in mysql
-
-# TODO move all variables to .env: 
-# eve SSO keys
-# influxdb
-# mysql

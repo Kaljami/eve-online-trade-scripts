@@ -120,7 +120,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-#.env #temporarily to deploy template
+.env
 .venv
 env/
 venv/
