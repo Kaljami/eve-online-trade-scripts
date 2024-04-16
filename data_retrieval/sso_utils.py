@@ -1,6 +1,7 @@
 import webbrowser
 import os
 import json
+import requests
 from requests_oauthlib import OAuth2Session
 from dotenv import load_dotenv
 
@@ -471,7 +472,23 @@ def get_character_id(session):
 
     res = session.get('https://login.eveonline.com/oauth/verify')
     return res.json()['CharacterID']
+
+def get_corporation_id(session, character_id):
+    if not session:
+        return None
     
+    corporation_id_url = f'https://esi.evetech.net/latest/characters/{character_id}/'
+    res = session.get(corporation_id_url)
+    return res.json()['corporation_id']
+
+def get_corporation_ceo(corporation_id):
+    res = requests.get(f'https://esi.evetech.net/latest/corporations/{corporation_id}/')
+    return res.json()['ceo_id']
+
+def get_corporation_name(corporation_id):
+    res = requests.get(f'https://esi.evetech.net/latest/corporations/{corporation_id}/')
+    return res.json()['name']
+
 
 if __name__ == '__main__':
     session = oauth_session()

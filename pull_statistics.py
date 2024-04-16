@@ -13,8 +13,10 @@ import mysql.connector
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-logging.basicConfig(filename='logs/pull_statistics.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='logs/pull_statistics.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
+
+### Setting begin
 
 influxdb_host = os.getenv("influxdb_host")
 influxdb_port = os.getenv("influxdb_port")
@@ -27,9 +29,9 @@ mysql_password = os.getenv("mysql_password")
 mysql_host = os.getenv("mysql_host")
 mysql_database = os.getenv("mysql_database")
 
+### Settings end
 
 engine = create_engine(f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}')
-
 
 def cycle_sso(session_file):
     global sso_session
@@ -163,6 +165,50 @@ def get_character_assets(prices_dataframe):
     #merged_asset_df.to_excel('merged_asset_df.xlsx')
     return total_asset_value
 
+def get_corporation_assets(prices_dataframe):
+    corporation_assets_url = f'https://esi.evetech.net/latest/corporations/{corporation_id}/assets/'
+    max_retries = 5  
+    retry_delay = 1  # delay between retries in seconds, not implenented so far
+    any_retry_successful = False
+
+    try:
+        for i in range(max_retries):
+            with sso_session:
+                response = sso_session.get(corporation_assets_url)
+                if response.status_code == 200:
+                    n_asset_pages = int(response.headers.get('x-pages', 0))
+                    print(f"In total {n_asset_pages} pages of assets")
+                    
+                    corporation_assets_data = asset_getter_really(sso_session, corporation_assets_url, n_asset_pages)
+                    logging.debug(f"Got {len(corporation_assets_data.index)} lines of corporation assets")
+                    merged_asset_df = corporation_assets_data.merge(prices_dataframe, left_on='type_id', right_index=True)
+                    any_retry_successful = True
+                    break # if not a timeout or other error, continue as normal
+                else:
+                    print(f"Error: {response.status_code} - {response.text} in get_corporation_assets")
+                    logging.warning(f"Error: {response.status_code} - {response.text} in get_corporation_assets. Trying again.")
+                
+    except Exception as e:
+        print(f"Exception during get_corporation_assets: {e}")
+        logging.error(f"Error in get_corporation_assets(): {e}")
+
+    if not any_retry_successful:
+        return None
+ 
+    # calculate total asset value
+    if 'is_blueprint_copy' in merged_asset_df.columns:
+        merged_asset_df.loc[merged_asset_df['is_blueprint_copy'] == True, 'average_price'] =  0
+    merged_asset_df['total_value'] = merged_asset_df['quantity'] * merged_asset_df['average_price']
+    merged_asset_df['type_name'] = merged_asset_df['type_id'].map(get_item_names())
+    total_asset_value = merged_asset_df['total_value'].sum()
+    #print("Assets:")
+    #print(str(merged_asset_df))
+    #print(f"Total asset value: {total_asset_value}")
+    #merged_asset_df.to_csv('merged_asset_df.csv', index=False)
+    #merged_asset_df.to_excel('merged_asset_df.xlsx')
+    logging.debug(f"Got total corp asset value of {total_asset_value}")
+    return total_asset_value
+
 def get_character_industry_jobs(prices_dataframe):
     character_industry_jobs_url = f'https://esi.evetech.net/latest/characters/{character_id}/industry/jobs/'
     character_industry_jobs_response = sso_session.get(character_industry_jobs_url)
@@ -183,7 +229,35 @@ def get_character_industry_jobs(prices_dataframe):
         #print(f"Total industry job outputs: {total_sum}")
         return total_sum
     else:
-        print ("no industry jobs found")
+        print ("no character industry jobs found")
+        return 0
+    
+def get_corporation_industry_jobs(prices_dataframe):
+    corporation_industry_jobs_url = f'https://esi.evetech.net/latest/corporations/{corporation_id}/industry/jobs/'
+    corporation_industry_jobs_response = sso_session.get(corporation_industry_jobs_url)
+    logging.debug(f"corp industry jobs response: {corporation_industry_jobs_response}")
+    logging.debug(f"corp industry jobs response headers: {corporation_industry_jobs_response.headers}")
+    logging.debug(f"corp industry jobs response json content: {corporation_industry_jobs_response.json()}")
+    corporation_industry_jobs_data = corporation_industry_jobs_response.json()
+    #print("corporation_industry_jobs_data:", corporation_industry_jobs_data)
+    if corporation_industry_jobs_data:
+        corporation_industry_jobs = pd.DataFrame(corporation_industry_jobs_data)
+        #print("Industry jobs:")
+        #print(str(corporation_industry_jobs))
+
+        # get value of industry job outputs
+        # Merge price data on the 'product_type_id' field
+        merged_industry_df = corporation_industry_jobs.merge(prices_dataframe, left_on='product_type_id', right_index=True)
+        # Multiply the 'runs' column by the 'jita_price' column
+        merged_industry_df['total_price'] = merged_industry_df['runs'] * merged_industry_df['jita_price']
+        # Calculate the total sum for all rows
+        total_sum = merged_industry_df['total_price'].sum()
+        #print(f"Total industry job outputs: {total_sum}")
+        logging.debug(f"Total corporation industry job outputs: {total_sum}")
+        return total_sum
+    else:
+        logging.debug(f"no corporation industry jobs found")
+        print ("no corporation industry jobs found")
         return 0
     
 def get_character_implants(): #TODO add the current clone implants to this
@@ -302,7 +376,7 @@ def get_average_prices():
     #print(str(avg_prices_dataframe))
     return avg_prices_dataframe
 
-def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants):
+def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value):
     data = {#'character_id': [character_id], 
             #'character_name': [character_name], 
             'character_wallet_balance': [character_wallet_balance], 
@@ -311,6 +385,8 @@ def create_summary_dataframe(character_id, character_name, character_wallet_bala
             'character_sell_order_value': [float(character_sell_order_value)],
             'character_buy_order_value': [float(character_buy_order_value)],
             'character_implants': [float(character_implants)],
+            'corporation_asset_value': [int(corporation_asset_value)],
+            'corporation_industry_value': [int(corporation_industry_value)],
             }
     summary_dataframe = pd.DataFrame(data)
     #print(str(summary_dataframe))
@@ -347,16 +423,19 @@ def write_to_influxdb_v1(df, measurement, tags, time_column='time'):
 def rotate_all_sessions():
     sessions_directory_stats = 'sessions_stats'
     session_files = [f for f in os.listdir(sessions_directory_stats) if f.endswith('.json')]
-    print (session_files)
+    #print (session_files)
     char_index = 0
 
     for session_file in session_files: #TODO add tqdm progress bar
         char_index += 1
-        global character_id, character_name, prices_dataframe, avg_prices_dataframe, character_sell_order_value, character_buy_order_value, character_asset_value, character_industry_value, character_wallet_balance, character_implants
+        global character_id, character_name, corporation_id, corporation_name, prices_dataframe, avg_prices_dataframe, character_sell_order_value, character_buy_order_value, character_asset_value, character_industry_value, character_wallet_balance, character_implants
         print ("Using session file", session_file)
         cycle_sso(session_file)
         character_id = sso_utils.get_character_id(sso_session)
         character_name = sso_utils.get_character(sso_session)
+        corporation_id = sso_utils.get_corporation_id(sso_session, character_id)
+        corporation_ceo_id = sso_utils.get_corporation_ceo(corporation_id)
+        corporation_name = sso_utils.get_corporation_name(corporation_id)
         logging.debug(f"-----------------\nStarting to pull statistics for character {character_name}")
         print(f'SSO Status: {f"Logged in as {character_name}" if character_name else "Not logged in"}')
         if char_index == 1:
@@ -371,8 +450,17 @@ def rotate_all_sessions():
         get_character_mining()
         get_character_journal()
         get_character_transactions()
-        df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants)
-        write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
+        if character_id == corporation_ceo_id:
+            logging.debug(f"{character_name} is CEO of corporation ID {corporation_id}. Getting corporation data.")
+            corporation_asset_value = get_corporation_assets(avg_prices_dataframe)
+            corporation_industry_value = get_corporation_industry_jobs(prices_dataframe)
+            df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value)
+            write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name, 'corporation_name': corporation_name})
+        else: 
+            corporation_asset_value = 0
+            corporation_industry_value = 0
+            df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value)
+            write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
 rotate_all_sessions()
 
