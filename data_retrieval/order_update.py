@@ -83,8 +83,8 @@ def update_all(settings, session, character_id):
     print("Market order list found")
 
     # Download actual up-to-date prices from ESI
-    min_prices = get_prices_from_station(settings.dest_hub, "sell", settings.cache_all)
-    max_prices = get_prices_from_station(settings.dest_hub, "buy", settings.cache_all)
+    min_prices = get_prices_from_station(settings.dest_hub, "sell", False)
+    max_prices = get_prices_from_station(settings.dest_hub, "buy", False)
 
     sell_orders_f = sell_orders[sell_orders['is_buy_order'] == False]
     buy_orders_f = buy_orders[buy_orders['is_buy_order'] == True]

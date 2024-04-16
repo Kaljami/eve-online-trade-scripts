@@ -45,7 +45,7 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
     history_json = historical_data.get_all_history(station_name, typeIDs, cached=cached)
     print('Success!')
 
-    print(f'Processing history content into database...')
+    print(f'Processing history content into dataframe...')
     typeID_history_dict = {
         typeID: pd.DataFrame.from_records(data, index=['date'])
         for typeID, data

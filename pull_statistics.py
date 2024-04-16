@@ -13,7 +13,7 @@ import mysql.connector
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-logging.basicConfig(filename='logs/pull_statistics.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='logs/pull_statistics.log', level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
 
 influxdb_host = os.getenv("influxdb_host")
@@ -76,25 +76,25 @@ def get_pageful_of_assets(session, character_assets_url, page):
     print(f"grabbing pageful of assets, page number {page}")
     params = {'page': page}
     
-    max_retries = 5  # Define the maximum number of retries
-    retry_delay = 1  # Define the delay between retries in seconds
+    max_retries = 5  
+    retry_delay = 1  # delay between retries in seconds
     # retry if response is 504 timeout
     for i in range(max_retries):
         response = session.get(character_assets_url, params=params)
         if response.status_code != 504:  
-            break
+            break # if not a timeout, continue as normal
         print("Got timeout when grabbing assets. Retrying...")
-        logging.debug(f"Got timeout when grabbing assets. Retrying...")
+        logging.warning(f"Got timeout when grabbing assets with get_pageful_of_assets(). Retrying...")
         time.sleep(retry_delay)
-    logging.debug(f"Response status: {response.status_code}")
+    logging.info(f"get_pageful_of_assets response status: {response.status_code}")
     logging.debug(f"Response headers: {response.headers}")
     try:
         response_json = response.json()
-        logging.debug(f"Response JSON: {response_json}")
+        logging.debug(f"Response JSON for get_pageful_of_assets(): {response_json}")
         return response_json
     except Exception as json_error:
         print(f"Error parsing JSON: {json_error}")
-        logging.debug(f"Error parsing JSON: {json_error}")
+        logging.error(f"Error parsing JSON in get_pageful_of_assets(): {json_error}")
         return None
 
 def get_all_assets(session, character_assets_url, pages):
@@ -118,25 +118,37 @@ def asset_getter_really(sso_session, character_assets_url, n_asset_pages):
         return merged_df
     except ValueError as ve:
         print(f"ValueError: {ve}")
+        logging.error(f"Error in asset_getter_really(): {ve}")
         return None
 
 def get_character_assets(prices_dataframe):
     character_assets_url = f'https://esi.evetech.net/latest/characters/{character_id}/assets/'
+    max_retries = 5  
+    retry_delay = 1  # delay between retries in seconds, not implenented so far
+    any_retry_successful = False
 
     try:
-        with sso_session:
-            response = sso_session.get(character_assets_url)
-            if response.status_code != 200:
-                print(f"Error: {response.status_code} - {response.text}")
-                return None
-            
-            n_asset_pages = int(response.headers.get('x-pages', 0))
-            print(f"In total {n_asset_pages} pages of assets")
-            
-            character_assets_data = asset_getter_really(sso_session, character_assets_url, n_asset_pages)
-            merged_asset_df = character_assets_data.merge(prices_dataframe, left_on='type_id', right_index=True)
+        for i in range(max_retries):
+            with sso_session:
+                response = sso_session.get(character_assets_url)
+                if response.status_code == 200:
+                    n_asset_pages = int(response.headers.get('x-pages', 0))
+                    print(f"In total {n_asset_pages} pages of assets")
+                    
+                    character_assets_data = asset_getter_really(sso_session, character_assets_url, n_asset_pages)
+                    merged_asset_df = character_assets_data.merge(prices_dataframe, left_on='type_id', right_index=True)
+                    any_retry_successful = True
+                    break # if not a timeout or other error, continue as normal
+                else:
+                    print(f"Error: {response.status_code} - {response.text} in get_character_assets")
+                    logging.warning(f"Error: {response.status_code} - {response.text} in get_character_assets. Trying again.")
+                
     except Exception as e:
-        print(f"Exception during get_character_assets: {e}")           
+        print(f"Exception during get_character_assets: {e}")
+        logging.error(f"Error in get_character_assets(): {e}")
+
+    if not any_retry_successful:
+        return None
  
     # calculate total asset value
     if 'is_blueprint_copy' in merged_asset_df.columns:
@@ -345,6 +357,7 @@ def rotate_all_sessions():
         cycle_sso(session_file)
         character_id = sso_utils.get_character_id(sso_session)
         character_name = sso_utils.get_character(sso_session)
+        logging.debug(f"-----------------\nStarting to pull statistics for character {character_name}")
         print(f'SSO Status: {f"Logged in as {character_name}" if character_name else "Not logged in"}')
         if char_index == 1:
             prices_dataframe = get_jita_prices(False) #only get live prices on the first round
