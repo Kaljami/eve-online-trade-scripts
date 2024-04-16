@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, inspect
 from tqdm import tqdm
 from data_retrieval.price_differences import get_prices_from_station
 from datetime import datetime, timezone
+from time import sleep
 import discord
 from discord import Embed
 import yaml
@@ -26,8 +27,9 @@ db_database = os.getenv("mysql_database")
 
 # Contracts: 
 regions = ["Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
-minimum_profit_percentage = 20
-minimum_profit_absolute = 30000000 #30 million
+minimum_profit_percentage = 15
+minimum_profit_absolute = 30000000 # 30 million
+good_profit_absolute = 150000000 # 150 million. Send notification if profit is above this treshold even if percentage is lower. 
 maximum_volume_br = 13000
 maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
@@ -160,7 +162,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     ###################################################################
 
     print(f'Got {len(contracts_json)} contracts!')
-    logging.info(f'Got {len(contracts_json)} contracts in {region_name}')
+    logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
     contracts_df = pd.DataFrame.from_records(contracts_json)
     ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange']
 
@@ -287,11 +289,14 @@ def num_to_string(number):
 
 
 async def send_embed(webhook_url, embed):
-    async with aiohttp.ClientSession() as session:
-        webhook = discord.Webhook.from_url(webhook_url, session=session)
-        await webhook.send(embed=embed, username=sender_name, avatar_url=sender_icon_url)
+    try: 
+        async with aiohttp.ClientSession() as session:
+            webhook = discord.Webhook.from_url(webhook_url, session=session)
+            await webhook.send(embed=embed, username=sender_name, avatar_url=sender_icon_url)
+    except Exception as e:
+        logging.error(f"Error {e} while sending embed: {embed}")
 
-def send_discord_message(message): # Required to send a ping because embeds can't have tags 
+def send_discord_message(message): # Required to send a ping as a separate message because embeds can't have tags 
     print(f"Attempting to send a message")
     payload = {
         "content" : message,
@@ -301,18 +306,25 @@ def send_discord_message(message): # Required to send a ping because embeds can'
     send_to_webhook = requests.post(discord_webhook_url, json = payload)
     try:
         send_to_webhook.raise_for_status()
+        sleep(2) # add a small delay to prevent hitting discord rate limit
     except requests.exceptions.HTTPError as err:
-        print(err) # TODO add delay if 429 rate limit
-        logging.error(f"Error on send_discord_message(): {err}")
+        print(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message.")
+        logging.error(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message.")
+        sleep(15)
     else:
         print("Payload delivered successfully, code {}.".format(send_to_webhook.status_code))
-        logging.info("Payload delivered successfully, code {}.".format(send_to_webhook.status_code))
+        logging.debug("Notification message delivered successfully, code {}.".format(send_to_webhook.status_code))
 
-def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value):
-    # Create a new embed instance
-    if ((discount > 0.4)and (difference > minimum_profit_absolute)): #TODO add setting variable for tags
+def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value): # Create a new embed instance to be sent
+    
+    if (
+    (discount > 0.4) and
+    (difference > minimum_profit_absolute) 
+    or
+    (difference > good_profit_absolute)
+    ):
         print ("found a good profit!", discount)
-        send_discord_message(f"Daddy <{discord_contract_notification_tag_id}> I found a good profit margin of {discount_pct}! It's on contract below :3") # tag the recipient in a separate message 
+        send_discord_message(f"Daddy <{discord_contract_notification_tag_id}> I found a good profit of {p_difference} ISK! It's on contract below :3") # tag the recipient in a separate message 
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.green())
     if volume > 200000:
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.red())
@@ -324,14 +336,15 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     embed.add_field(name="Price", value=p_price, inline=True)
     embed.add_field(name="Discount", value=discount_pct, inline=True)
     embed.add_field(name="Jita Buy", value=p_jita_buy_value, inline=True)
-    embed.add_field(name="Volume", value=f"{volume}m3", inline=True)
-    embed.add_field(name="Packaged volume", value=f"{packaged_volume}m3", inline=True)
+    #embed.add_field(name="Volume", value=f"{volume} m3", inline=True)
+    embed.add_field(name="Packaged volume", value=f"{p_packaged_volume} m3", inline=True)
     embed.add_field(name="Age", value=age_str, inline=True)
 
-    # Add a link to the contract in the in-game notepad
+    # Add a link to the contract to be used in the in-game notepad
     embed.add_field(name="Paste to in-game notepad", value=f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>", inline=False)
-    #embed.set_author(name=sender_name, icon_url=sender_icon_url)
-
+    
+    #additionally can be used to set different icons or such
+    #embed.set_author(name=sender_name, icon_url=sender_icon_url) 
     return embed
 
 
@@ -359,14 +372,15 @@ async def really_send_embed():
         p_jita_buy_value=prettify_num(jita_buy_value)
         age = current_timestamp - date_issued
         age_str = prettify_age(age)
+        p_packaged_volume=prettify_num(packaged_volume)
         packaged_volume = "%.2f" % packaged_volume
         if discount > (minimum_profit_percentage/100) and jita_buy_value > minimum_profit_absolute:
-            print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {volume}m3, Issued: {date_issued}, Age: {age_str}")
+            print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}")
             print(f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>")
             print("")
             
             #print(f"Attempting to send a message")
-            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value)
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value)
             await send_embed(discord_webhook_url, embed)
             #print ("Message sent")
             n_good_profit_margin += 1
@@ -387,7 +401,7 @@ for region in regions:
     except Exception as e:
         print(e)
         print(f"Saving {region} contracts to database failed. Trying again.")
-        logging.error(f"Saving {region} contracts to database failed. Trying again.: {e}")
+        logging.warning(f"Saving {region} contracts to database failed. Trying again.: {e}")
         try:
             ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
             print("New contracts saved to database!")
@@ -405,7 +419,7 @@ query = f"""
         FROM contracts
         WHERE price < jita_buy_value
     ) AS recent_contracts
-    WHERE date_discovered >= '{current_timestamp}' - INTERVAL 10 MINUTE;
+    WHERE date_discovered >= '{current_timestamp}' - INTERVAL 9 MINUTE;
 """
 
 current_timestamp = datetime.now(timezone.utc)
