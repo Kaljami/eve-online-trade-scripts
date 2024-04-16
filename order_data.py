@@ -72,8 +72,10 @@ def get_all_orders_concurrent(system_name, order_type):
 
 
 def get_orders_from_cache(system_name, order_type):
+   #print(f"Getting {system_name} {order_type} orders from cache.")
    """Return the latest cached copy of market orders, useful for debugging."""
    cache_file = os.path.join('cache', f'{system_name}_orders_{order_type}.pkl')
+   #print("Cache file:", cache_file)
 
    with open(cache_file, 'rb') as fp:
        return pickle.load(fp)

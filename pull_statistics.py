@@ -13,7 +13,7 @@ import mysql.connector
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-logging.basicConfig(filename='logs/latest.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='logs/pull_statistics.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
 
 influxdb_host = os.getenv("influxdb_host")

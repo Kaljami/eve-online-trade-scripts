@@ -184,3 +184,6 @@ static/groupIDs.yaml
 static/typeIDs.json
 static/typeMaterials.json
 static/typeMaterials.yaml
+static/types.en-us.yaml
+static/types.en-us.json
+static/types_packaged_volumes.json

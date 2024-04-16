@@ -11,7 +11,7 @@ def get_prices_from_station(station_name, order_type, cached) -> pd.Series:
     # Get orders as JSON
     print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
     orders_json = order_data.get_all_orders(station_name, order_type, cached)
-    #print (str(orders_json))
+    #print ("get_prices_from_station says: orders_json:",str(orders_json))
     # This sometimes fails for unknown reason. 
     print(f'Got {len(orders_json)} orders!')
 
