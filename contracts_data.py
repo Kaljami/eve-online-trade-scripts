@@ -41,7 +41,7 @@ discord_contract_notification_tag_id = os.getenv("discord_contract_notification_
 
 ### SETTINGS END
 
-logging.basicConfig(filename='logs/latest.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='logs/contracts_data.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
 engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
 intents = discord.Intents.default() 
@@ -337,6 +337,7 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
 
 
 async def really_send_embed():
+    n_good_profit_margin = 0
     for index, row in result_df.iterrows():
         # Get data from the database for the console output
         contract_id = row['contract_id']
@@ -359,7 +360,7 @@ async def really_send_embed():
         age = current_timestamp - date_issued
         age_str = prettify_age(age)
         packaged_volume = "%.2f" % packaged_volume
-        if discount > (minimum_profit_percentage/100) and jita_buy_value > 10000000:
+        if discount > (minimum_profit_percentage/100) and jita_buy_value > minimum_profit_absolute:
             print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {volume}m3, Issued: {date_issued}, Age: {age_str}")
             print(f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>")
             print("")
@@ -368,6 +369,8 @@ async def really_send_embed():
             embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value)
             await send_embed(discord_webhook_url, embed)
             #print ("Message sent")
+            n_good_profit_margin += 1
+    logging.info(f"{n_good_profit_margin} of the contracts had profit margin above {minimum_profit_percentage}% and buy value above {minimum_profit_absolute} ISK")
 
 async def main():
     await really_send_embed()
@@ -409,9 +412,12 @@ current_timestamp = datetime.now(timezone.utc)
 
 # Execute the query and print the results
 result_df = pd.read_sql_query(query, con=engine)
+n_new_profitable_contracts = len(result_df.index)
+logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
 #print("here's the result_df")
 #print(result_df)
 # Iterate through rows and print contract_id, price, and jita_buy_value
 
 asyncio.run(main())
 
+logging.info(f"Script finished successfully.")

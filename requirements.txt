@@ -12,3 +12,7 @@ mysql-connector-python
 python-dotenv
 sqlalchemy
 pymysql
+discord
+asyncio
+nest_asyncio
+tqdm
