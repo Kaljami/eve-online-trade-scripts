@@ -1,11 +1,11 @@
 from ast import literal_eval
 import webbrowser
 
-import price_differences
-import station_price_differences
-import order_update
+import data_retrieval.price_differences as price_differences
+import data_retrieval.station_price_differences as station_price_differences
+import data_retrieval.order_update as order_update
 import settings
-import sso_utils
+import data_retrieval.sso_utils as sso_utils
 
 VERSION = '0.2'
 

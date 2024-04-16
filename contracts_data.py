@@ -6,7 +6,7 @@ import pandas as pd
 import nest_asyncio
 from sqlalchemy import create_engine, inspect
 from tqdm import tqdm
-from price_differences import get_prices_from_station
+from data_retrieval.price_differences import get_prices_from_station
 from datetime import datetime, timezone
 import discord
 from discord import Embed

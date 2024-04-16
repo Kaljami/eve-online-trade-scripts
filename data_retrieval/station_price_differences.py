@@ -1,77 +1,16 @@
 import pandas as pd
 
-import order_data
-import historical_data
-import order_import
-import render
-from sde_utils import get_item_names, get_item_sizes
+import data_retrieval.order_data as order_data
+import data_retrieval.historical_data as historical_data
+import data_retrieval.order_import as order_import
+import data_processing.render as render
+from data_processing.sde_utils import get_item_names, get_item_sizes
 import os
-
-def get_prices_from_station(station_name, order_type, cached) -> pd.Series:
-    # Get orders as JSON
-    print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
-    orders_json = order_data.get_all_orders(station_name, order_type, cached)
-    #print ("get_prices_from_station says: orders_json:",str(orders_json))
-    # This sometimes fails for unknown reason. 
-    print(f'Got {len(orders_json)} orders!')
-
-    # Convert to DF and find the best price for each typeID
-    df = pd.DataFrame.from_records(orders_json)
-    if order_type == "sell":
-        return df.groupby('type_id')['price'].min()  # pd.Series
-    if order_type == "buy":
-        return df.groupby('type_id')['price'].max()  # pd.Series
-    
-def get_ungrouped_prices_from_station(station_name, order_type, cached) -> pd.Series:
-    # Get orders as JSON. Keep all the orders instead of only the best price available. 
-    print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
-    orders_json = order_data.get_all_orders(station_name, order_type, cached) #this could as well be always cached 
-    print(f'Got {len(orders_json)} orders!')
-
-    # Convert to DF
-    df = pd.DataFrame.from_records(orders_json)
-    result_df = df.copy()
-    print (str(result_df))
-    return result_df
-    
+from data_retrieval.price_differences import get_prices_from_station, get_ungrouped_prices_from_station, get_volume_price_history
 
 
-def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Series]:
-    """Get historical data for each given typeID"""
 
-    idx = pd.IndexSlice
-
-    print(f'Loading market history in {station_name} for {len(typeIDs)} items...')
-    history_json = historical_data.get_all_history(station_name, typeIDs, cached=cached)
-    print('Success!')
-
-    print(f'Processing history content into database...')
-    typeID_history_dict = {
-        typeID: pd.DataFrame.from_records(data, index=['date'])
-        for typeID, data
-        in history_json.items()
-    }
-
-    historical_df = pd.concat(typeID_history_dict, axis=1).T
-    historical_df = historical_df.drop('date', axis='columns')
-    historical_df.columns = pd.to_datetime(historical_df.columns, yearfirst=True)
-    print('Done!')
-
-    print(f'Pulling out historical volume data for {days} days:')
-    v = historical_df.loc[idx[:, 'volume'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
-    v = v.fillna(0).mean(axis=1)
-    v = v.droplevel(1, axis=0)
-
-    print(f'Pulling out historical price data for {days} days:')
-    p = historical_df.loc[idx[:, 'average'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
-    p = p.mean(axis=1)
-    p = p.droplevel(1, axis=0)
-
-    print('Done!')
-    return v, p
-
-
-### TODO: 
+### basically a duplicate of price_differences.py. There is probably a better way to do this.  
 # give penalty score for competing sellers if settings.dest_order_type == sell
 # Add sorting to output html. Maybe output as excel or csv? 
 # Maybe add those variables below to settings? 
@@ -80,6 +19,7 @@ def price_differences(settings):
     
     minimum_margin = 0.1 # 10%
     minimum_profit_per_m3 = 1000
+
 
     print('Loading Static Data Export mappings...', end=' ')
     typeIDs_to_names = get_item_names()
@@ -90,10 +30,14 @@ def price_differences(settings):
     summary = pd.DataFrame()
 
     # Order Series
-    source_prices = get_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all)
-    dest_prices = get_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all)
-    ungrouped_source_prices = get_ungrouped_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all)
-    ungrouped_dest_prices = get_ungrouped_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all)
+    source_prices = get_prices_from_station(settings.source_hub, "buy", settings.cache_all)
+    dest_prices = get_prices_from_station(settings.source_hub, "sell", settings.cache_all)
+    ungrouped_source_prices = get_ungrouped_prices_from_station(settings.source_hub, "buy", settings.cache_all)
+    ungrouped_dest_prices = get_ungrouped_prices_from_station(settings.source_hub, "buy", settings.cache_all)
+    #print(str(source_prices))
+    #print(str(ungrouped_source_prices))
+
+
 
     # Sell-side costs: Broker fees (~3.5%), Sales tax (~2.25%), Hauling fees (~2%).
     dest_prices_taxed = dest_prices * ((1 - 0.035 - 0.0225) * (1 - 0.02))
@@ -107,6 +51,11 @@ def price_differences(settings):
     # Availability calculations
     # Calculate the maximum source price that allows for the specified margin
     summary['max_source_price'] = summary['Destination price'] / (1 + minimum_margin)
+
+    # Calculate the maximum source price that allows for the specified margin
+    #ungrouped_source_prices['max_source_price'] = summary['Destination price'] / (1 - minimum_margin)
+    #print("ungrouped_source_prices")
+    #print(str(ungrouped_source_prices))
 
     # Merge max prices from summary to ungrouped 
     ungrouped_max_source_prices = ungrouped_source_prices.merge(summary[['max_source_price']], how='left', on='type_id')
@@ -137,7 +86,7 @@ def price_differences(settings):
     print("summary:")
     print(str(summary))
     # Get historical volume and price for order refinement
-    volume, price = get_volume_price_history(settings.dest_hub, summary.index, settings.days_history, settings.cache_all)
+    volume, price = get_volume_price_history(settings.source_hub, summary.index, settings.days_history, settings.cache_all)
 
     summary['Daily Volume'] = volume
 
@@ -151,15 +100,14 @@ def price_differences(settings):
     summary = summary.dropna()
 
     # Find out which items are already being traded by the player
-    """
-    player_orders_df = pd.read_csv(order_import.get_player_orders_file()) # this should be updated to use ESI data if it's needed at all
+    player_orders_df = pd.read_csv(order_import.get_player_orders_file())
     player_orders_set = set(player_orders_df['typeID'])
     summary['Already Selling'] = summary.index.isin(player_orders_set)
 
     if settings.hide_existing:
         summary = summary[~summary['Already Selling']]
         summary = summary.drop('Already Selling', axis=1)
-    """
+
     # Calculate item volume required to fulfil daily sale volume
     summary['Haul Size'] = summary['Units available'] * summary.index.map(typeIDs_to_sizes)
 
@@ -175,6 +123,5 @@ def price_differences(settings):
     summary = summary.rename(typeIDs_to_names)
     summary.to_csv('exports/summary.csv') 
     # Output to a pretty table and return URL for further use
-    print("Opening result in browser. Result saved as exports/summary.csv")
     url = render.render_to_html(summary)
     return url

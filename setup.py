@@ -1,3 +1,5 @@
+### This is guaranteed to be out of date
+
 import os
 
 def create_directories_and_files():

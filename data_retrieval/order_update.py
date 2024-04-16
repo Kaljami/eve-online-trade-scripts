@@ -3,8 +3,8 @@ from pynput import keyboard
 import pyperclip
 import requests
 
-import order_import
-from price_differences import get_prices_from_station
+import data_retrieval.order_import as order_import
+from data_retrieval.price_differences import get_prices_from_station
 
 # TODO: Load character location from session and use that as region to check orders
 

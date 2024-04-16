@@ -1,8 +1,8 @@
 import os
-import sso_utils
+import data_retrieval.sso_utils as sso_utils
 import pandas as pd
-from sde_utils import get_item_names
-from price_differences import get_prices_from_station
+from data_processing.sde_utils import get_item_names
+from data_retrieval.price_differences import get_prices_from_station
 import influxdb_client
 #from influxdb_client import InfluxDBClient, Point, WritePrecision
 #from influxdb_client.client.write_api import SYNCHRONOUS
