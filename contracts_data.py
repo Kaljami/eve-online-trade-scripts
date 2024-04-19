@@ -173,17 +173,20 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
 
     contract_values = []
     contract_packaged_volumes = []
+    total_requested_prices = []
     
     # Multithreading for fetching data
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
         for future in tqdm(futures, desc="Processing Contracts", unit="contracts", total=len(futures)):
-            contract_value, contract_packaged_volume = future.result()
+            contract_value, contract_packaged_volume, total_requested_price = future.result()
             contract_values.append(contract_value)
             contract_packaged_volumes.append(contract_packaged_volume)
+            total_requested_prices.append(total_requested_price)
 
     ie_contracts_df['jita_buy_value'] = contract_values
     ie_contracts_df['packaged_volume'] = contract_packaged_volumes
+    ie_contracts_df['price'] = ie_contracts_df['price'] + total_requested_prices
     ie_contracts_df['region_name'] = region_name
 
     return ie_contracts_df
@@ -393,6 +396,7 @@ for region in regions:
     ie_contracts_df['date_discovered'] = current_timestamp
     try:
         ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
+        print("Dataframe saved to database: \n", ie_contracts_df)
     except Exception as e:
         print(e)
         print(f"Saving {region} contracts to database failed. Trying again.")
@@ -421,6 +425,7 @@ current_timestamp = datetime.now(timezone.utc)
 
 # Execute the query and print the results
 result_df = pd.read_sql_query(query, con=engine)
+print("New contracts priced below jita buy:\n", result_df)
 n_new_profitable_contracts = len(result_df.index)
 logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
 #print("here's the result_df")
