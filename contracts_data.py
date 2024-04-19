@@ -235,7 +235,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
     merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume'] # Calculate total volume
     
-    print(merged_items_df)
+    #print(merged_items_df)
     # Calculate the total sum for all rows
     total_sum = merged_items_df['total_price'].sum()
     if merged_items_df['requested_price'].sum() > 0:
