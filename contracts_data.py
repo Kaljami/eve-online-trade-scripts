@@ -7,11 +7,12 @@ import nest_asyncio
 from sqlalchemy import create_engine, inspect
 from tqdm import tqdm
 from data_retrieval.price_differences import get_prices_from_station
+from data_processing.types_in_group import get_rig_type_ids
 from datetime import datetime, timezone
 from time import sleep
 import discord
 from discord import Embed
-discord.VoiceClient.warn_nacl = False # get rid of warning in logging
+discord.VoiceClient.warn_nacl = False # gets rid of warning in logging
 import yaml
 import json
 import logging
@@ -28,9 +29,9 @@ db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
 
 # Contracts: 
-#regions = ["Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
-regions = ["The Forge"]
+regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
 minimum_profit_percentage = 15
+good_profit_percentage = 30
 minimum_profit_absolute = 30000000 # 30 million
 good_profit_absolute = 150000000 # 150 million. Send notification if profit is above this treshold even if percentage is lower. 
 maximum_volume_br = 13000
@@ -62,8 +63,6 @@ def get_num_pages(region_id):
     params = {}
 
     res = requests.get(contracts_url, params=params)
-#    print('request url: ' + res)
-#    print(int(res.headers['X-Pages']))
 
     return int(res.headers['X-Pages'])
 
@@ -77,10 +76,8 @@ async def get_page(session, region_id, page):
     }
 
     res = await session.get(contracts_url, params=params)
-    #print(res.json)
     return await res.json()
 
-#get_page(10000060, 1)
 
 async def async_get_all_contracts(region_id, pages):
     """Async get all pages of contracts for a given region."""
@@ -117,13 +114,9 @@ def get_all_contracts_concurrent(region_name):
 
 def get_all_contracts(region_name, cached):
     if cached == True:
-        print ("we don't have cache for contracts yet")
-    #    print (f"Getting {region_name} {order_type} orders from cached data")
-    #    return get_orders_from_cache(region_name, order_type)
+        print ("we don't have cache for contracts")
     else:
         all_contracts = get_all_contracts_concurrent(region_name)
-        #print("all_contracts:",all_contracts)
-    #save_orders_to_cache(region_name, all_orders, order_type)
 
     return all_contracts
 
@@ -224,6 +217,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
         logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
         return None
     if 'type_id' not in items_df.columns:
+            logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
             return None  # Skip contracts without a 'type_id'
     
     merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True)
@@ -233,17 +227,25 @@ def get_contract_items_value(contract_id, prices_dataframe):
     merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True)
     if 'is_blueprint_copy' in merged_items_df.columns: # set bpc value at 0
         merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'jita_price'] =  0
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = -abs(merged_items_df['jita_price']) # It's not a good solution, but it's solution. If a contract requests items, mark their value as negative instead. TODO do something smarter.
+    # If items are requested (is_included == False), add their total value to the column "requested_price"
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
+    # If items requested also set their value as 0 in the contract
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0
+    merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'jita_price'] = 0
     merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
     merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume'] # Calculate total volume
     
-    #print(merged_items_df)
+    print(merged_items_df)
     # Calculate the total sum for all rows
     total_sum = merged_items_df['total_price'].sum()
+    if merged_items_df['requested_price'].sum() > 0:
+        total_requested_price = merged_items_df['requested_price'].sum()
+    else:
+        total_requested_price = 0
     total_packaged_volume = merged_items_df['total_volume'].sum() # Calculate total volume
     #print(f"Total sum: {total_sum}")
     #print(f"Total volume: {total_packaged_volume}")
-    return total_sum, total_packaged_volume
+    return total_sum, total_packaged_volume, total_requested_price
 
 
 
@@ -311,7 +313,7 @@ def send_discord_message(message): # Required to send a ping as a separate messa
 def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value): # Create a new embed instance to be sent
     
     if (
-    (discount > 0.4) and
+    (discount > (good_profit_percentage/100)) and
     (difference > minimum_profit_absolute) 
     or
     (difference > good_profit_absolute)
@@ -383,7 +385,7 @@ async def main():
     await really_send_embed()
 
 packaged_volumes_dataframe = load_json_as_dataframe()
-print(packaged_volumes_dataframe)
+rig_type_ids = get_rig_type_ids()
 
 current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 for region in regions:
