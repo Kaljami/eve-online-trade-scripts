@@ -11,10 +11,12 @@ from datetime import datetime, timezone
 from time import sleep
 import discord
 from discord import Embed
+discord.VoiceClient.warn_nacl = False # get rid of warning in logging
 import yaml
 import json
 import logging
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 ### SETTINGS BEGIN
 
@@ -26,7 +28,8 @@ db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
 
 # Contracts: 
-regions = ["Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
+#regions = ["Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
+regions = ["The Forge"]
 minimum_profit_percentage = 15
 minimum_profit_absolute = 30000000 # 30 million
 good_profit_absolute = 150000000 # 150 million. Send notification if profit is above this treshold even if percentage is lower. 
@@ -151,55 +154,45 @@ def load_json_as_dataframe():
 
 
 
+def process_contract(contract_id, prices_dataframe):
+    try:
+        contract_value, contract_packaged_volume = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume
+    except Exception as e:
+        logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
+        return 0, 0
+
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     prices_dataframe = get_jita_prices(True)
-    # Get orders as JSON
     print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
     contracts_json = get_all_contracts(region_name, cached)
-
-    ################################################################### Reduce the amount of data for testing
-    #contracts_json = contracts_json[:200]
-    ###################################################################
-
     print(f'Got {len(contracts_json)} contracts!')
     logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
     contracts_df = pd.DataFrame.from_records(contracts_json)
     ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange']
 
-    # Run a SQL query to get a list of existing contract_id's
     existing_contract_ids_query = "SELECT contract_id FROM contracts;"
     existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
-    # Filter ie_contracts_df to exclude contracts with existing contract_id's
     ie_contracts_df = ie_contracts_df[~ie_contracts_df['contract_id'].isin(existing_contract_ids)]
 
-    # Convert date strings to datetime and format them
     ie_contracts_df['date_issued'] = ie_contracts_df['date_issued'].apply(convert_date_string_to_datetime)
     ie_contracts_df['date_expired'] = ie_contracts_df['date_expired'].apply(convert_date_string_to_datetime)
 
-    # Get value and packaged volume of every contract
     contract_values = []
     contract_packaged_volumes = []
-    for contract_id in tqdm(ie_contracts_df['contract_id'], desc="Processing Contracts", unit="contracts"):
-        try:
-            contract_value, contract_packaged_volume = get_contract_items_value(contract_id, prices_dataframe)
+    
+    # Multithreading for fetching data
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
+        for future in tqdm(futures, desc="Processing Contracts", unit="contracts", total=len(futures)):
+            contract_value, contract_packaged_volume = future.result()
             contract_values.append(contract_value)
             contract_packaged_volumes.append(contract_packaged_volume)
-        except Exception as e:
-            print(f"Error on get_contract_items_value() when processing contract_id {contract_id}:")
-            print(e)
-            logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
-            contract_value = 0
-            contract_packaged_volume = 0
-            contract_values.append(contract_value)
-            contract_packaged_volumes.append(contract_packaged_volume)
-
-        
-
 
     ie_contracts_df['jita_buy_value'] = contract_values
     ie_contracts_df['packaged_volume'] = contract_packaged_volumes
     ie_contracts_df['region_name'] = region_name
-    print(str(ie_contracts_df))
+
     return ie_contracts_df
 
 def get_contract_items(contract_id):
