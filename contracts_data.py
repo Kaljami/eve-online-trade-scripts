@@ -261,17 +261,6 @@ def get_contract_items_value(contract_id, prices_dataframe):
     return total_sum, total_packaged_volume, total_requested_price
 
 def get_blueprint_profits(): 
-    try:
-        with open(os.path.join('cache', 'interesting_blueprint_type_ids.pkl'), 'rb') as file:
-            interesting_blueprint_type_ids = pickle.load(file)
-            interesting_blueprint_type_ids = [int(x) for x in interesting_blueprint_type_ids] # Loading the pickle turns the values into strings for some reason
-            #return interesting_blueprint_type_ids
-    except FileNotFoundError:
-        print("File not found")
-    
-    #blueprint_type_ids_stripped = str(interesting_blueprint_type_ids)[1:]
-    blueprint_type_ids_stripped = str(interesting_blueprint_type_ids).lstrip('[').rstrip(']')
-    #blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE blueprint_type_id IN ({blueprint_type_ids_stripped});" ### Only few blueprints
     blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;" ### Every damn blueprint in the universe
     blueprint_values_df = pd.read_sql_query(blueprint_values_query, con=engine)
     blueprint_values_df['blueprint_profit'] = blueprint_values_df['blueprint_profit'] * 0.9 # Remove 10% from the profit margin to account for taxes and fees
