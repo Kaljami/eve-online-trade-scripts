@@ -149,11 +149,11 @@ def load_json_as_dataframe():
 
 def process_contract(contract_id, prices_dataframe):
     try:
-        contract_value, contract_packaged_volume = get_contract_items_value(contract_id, prices_dataframe)
-        return contract_value, contract_packaged_volume
+        contract_value, contract_packaged_volume, total_requested_price = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume, total_requested_price
     except Exception as e:
         logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
-        return 0, 0
+        return 0, 0, 0
 
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     prices_dataframe = get_jita_prices(True)
