@@ -271,8 +271,8 @@ def get_blueprint_profits():
     
     #blueprint_type_ids_stripped = str(interesting_blueprint_type_ids)[1:]
     blueprint_type_ids_stripped = str(interesting_blueprint_type_ids).lstrip('[').rstrip(']')
-    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE blueprint_type_id IN ({blueprint_type_ids_stripped});" ### Only few blueprints
-    #blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;" ### Every damn blueprint in the universe
+    #blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE blueprint_type_id IN ({blueprint_type_ids_stripped});" ### Only few blueprints
+    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;" ### Every damn blueprint in the universe
     blueprint_values_df = pd.read_sql_query(blueprint_values_query, con=engine)
     blueprint_values_df['blueprint_profit'] = blueprint_values_df['blueprint_profit'] * 0.9 # Remove 10% from the profit margin to account for taxes and fees
 
@@ -378,7 +378,6 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
 async def really_send_embed():
     n_good_profit_margin = 0
     for index, row in result_df.iterrows():
-        # Get data from the database for the console output
         contract_id = row['contract_id']
         price = row['price']
         jita_buy_value = row['jita_buy_value']
