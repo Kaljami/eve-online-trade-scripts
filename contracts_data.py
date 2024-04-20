@@ -4,7 +4,7 @@ import aiohttp
 import asyncio
 import pandas as pd
 import nest_asyncio
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.price_differences import get_prices_from_station
 from data_processing.types_in_group import get_rig_type_ids
@@ -18,6 +18,7 @@ import json
 import logging
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import pickle
 
 ### SETTINGS BEGIN
 
@@ -38,6 +39,7 @@ maximum_volume_br = 13000
 maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
+ignore_rigs = True
 
 # Discord:
 sender_name = os.getenv("discord_sender_name")
@@ -131,8 +133,9 @@ def get_jita_prices(cached):
     prices_dataframe = pd.DataFrame()
     jita_prices = get_prices_from_station("Jita", "buy", cached) #set False to get updated prices
     prices_dataframe['jita_price'] = jita_prices
-    print("jita_price data downloaded")
-    print(str(prices_dataframe))
+    if cached == False:
+        print("jita_price data downloaded")
+    #print(str(prices_dataframe))
     return prices_dataframe
 
 def load_json_as_dataframe():
@@ -159,7 +162,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     prices_dataframe = get_jita_prices(True)
     print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
     contracts_json = get_all_contracts(region_name, cached)
-    print(f'Got {len(contracts_json)} contracts!')
+    #print(f'Got {len(contracts_json)} contracts!')
     logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
     contracts_df = pd.DataFrame.from_records(contracts_json)
     ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange']
@@ -206,9 +209,6 @@ def get_contract_items(contract_id):
         return empty_json
     return items
 
-### TODO ignore fitted rig value
-### Use data in static/types.en-us.yaml to get packaged volumes 
-### Get rig group from static/typeIDs.yaml into a list and do a "if type_id in rigs" 
 def get_contract_items_value(contract_id, prices_dataframe):
     try:
         items = get_contract_items(contract_id)
@@ -222,21 +222,30 @@ def get_contract_items_value(contract_id, prices_dataframe):
     if 'type_id' not in items_df.columns:
             logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
             return None  # Skip contracts without a 'type_id'
-    
-    merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True)
+    #print("dataframe before prices: \n", items_df)
+    merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Added how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
     
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
     merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True)
-    if 'is_blueprint_copy' in merged_items_df.columns: # set bpc value at 0
-        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'jita_price'] =  0
-    # If items are requested (is_included == False), add their total value to the column "requested_price"
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
-    # If items requested also set their value as 0 in the contract
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0
-    merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'jita_price'] = 0
+
     merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
-    merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume'] # Calculate total volume
+    merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume']
+
+
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['jita_price'] # If items are requested (is_included == False), add their total value to the column "requested_price"
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0 # If items requested also set their value as 0 in the contract
+    if ignore_rigs:
+         merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'jita_price'] = 0 # Set rig value to 0 (this assumes every rig is fitted and cannot be sold)
+
+    if 'is_blueprint_copy' in merged_items_df.columns:
+        #merged_items_df = merged_items_df.merge(blueprint_values_df, left_on='type_id', right_on='blueprint_type_id', how='left')
+        merged_items_df = merged_items_df.merge(blueprint_values_df['blueprint_profit'], left_on='type_id', right_index=True, how='left')
+        merged_items_df.loc
+        merged_items_df.loc[merged_items_df['blueprint_profit'] > 0 , 'jita_price'] = merged_items_df['blueprint_profit']
+        merged_items_df.loc[merged_items_df['blueprint_profit'] <= 0 , 'jita_price'] = 0
+        merged_items_df['total_price'] = merged_items_df['runs'] * merged_items_df['jita_price']
+    #print("dataframe after merging bp profit:\n", merged_items_df)
     
     #print(merged_items_df)
     # Calculate the total sum for all rows
@@ -248,9 +257,28 @@ def get_contract_items_value(contract_id, prices_dataframe):
     total_packaged_volume = merged_items_df['total_volume'].sum() # Calculate total volume
     #print(f"Total sum: {total_sum}")
     #print(f"Total volume: {total_packaged_volume}")
+    #print("final result:\n",merged_items_df)
     return total_sum, total_packaged_volume, total_requested_price
 
+def get_blueprint_profits(): 
+    try:
+        with open(os.path.join('cache', 'interesting_blueprint_type_ids.pkl'), 'rb') as file:
+            interesting_blueprint_type_ids = pickle.load(file)
+            interesting_blueprint_type_ids = [int(x) for x in interesting_blueprint_type_ids] # Loading the pickle turns the values into strings for some reason
+            #return interesting_blueprint_type_ids
+    except FileNotFoundError:
+        print("File not found")
+    
+    #blueprint_type_ids_stripped = str(interesting_blueprint_type_ids)[1:]
+    blueprint_type_ids_stripped = str(interesting_blueprint_type_ids).lstrip('[').rstrip(']')
+    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE blueprint_type_id IN ({blueprint_type_ids_stripped});" ### Only few blueprints
+    #blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;" ### Every damn blueprint in the universe
+    blueprint_values_df = pd.read_sql_query(blueprint_values_query, con=engine)
+    blueprint_values_df['blueprint_profit'] = blueprint_values_df['blueprint_profit'] * 0.9 # Remove 10% from the profit margin to account for taxes and fees
 
+    #print (blueprint_values_df)
+    blueprint_values_df.set_index('blueprint_type_id', inplace=True)
+    return blueprint_values_df
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # trying this to remove decimals
@@ -295,7 +323,7 @@ async def send_embed(webhook_url, embed):
         logging.error(f"Error {e} while sending embed: {embed}")
 
 def send_discord_message(message): # Required to send a ping as a separate message because embeds can't have tags 
-    print(f"Attempting to send a message")
+    #print(f"Attempting to send a message")
     payload = {
         "content" : message,
         "username" : sender_name,
@@ -389,6 +417,7 @@ async def main():
 
 packaged_volumes_dataframe = load_json_as_dataframe()
 rig_type_ids = get_rig_type_ids()
+blueprint_values_df = get_blueprint_profits()
 
 current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 for region in regions:
@@ -425,9 +454,10 @@ current_timestamp = datetime.now(timezone.utc)
 
 # Execute the query and print the results
 result_df = pd.read_sql_query(query, con=engine)
-print("New contracts priced below jita buy:\n", result_df)
+#print("New contracts priced below jita buy:\n", result_df)
 n_new_profitable_contracts = len(result_df.index)
 logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
+print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
 #print("here's the result_df")
 #print(result_df)
 # Iterate through rows and print contract_id, price, and jita_buy_value
