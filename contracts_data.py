@@ -217,7 +217,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     except Exception as e:
         print(f"Error on get_contract_items_value() when processing contract_id {contract_id}")
         print(e)
-        logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
+        logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}\n items returned: {items}")
         return None
     if 'type_id' not in items_df.columns:
             logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
