@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.price_differences import get_prices_from_station
 from data_processing.types_in_group import get_rig_type_ids
+from data_processing.sde_utils import get_item_names
 from datetime import datetime, timezone
 from time import sleep
 import discord
@@ -46,6 +47,8 @@ sender_name = os.getenv("discord_sender_name")
 sender_icon_url = os.getenv("discord_sender_icon_url")
 discord_webhook_url = os.getenv("discord_webhook_url")
 discord_contract_notification_tag_id = os.getenv("discord_contract_notification_tag_id")
+
+pd.set_option('display.float_format', lambda x: '%.2f' % x) # disable scientific notation for floats in the dataframes
 
 ### SETTINGS END
 
@@ -160,7 +163,7 @@ def process_contract(contract_id, prices_dataframe):
 
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     prices_dataframe = get_jita_prices(True)
-    print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
+    #print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
     contracts_json = get_all_contracts(region_name, cached)
     #print(f'Got {len(contracts_json)} contracts!')
     logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
@@ -181,7 +184,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     # Multithreading for fetching data
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
-        for future in tqdm(futures, desc="Processing Contracts", unit="contracts", total=len(futures)):
+        for future in tqdm(futures, desc=f"Processing {region_name} contracts", unit="contracts", total=len(futures)):
             contract_value, contract_packaged_volume, total_requested_price = future.result()
             contract_values.append(contract_value)
             contract_packaged_volumes.append(contract_packaged_volume)
@@ -194,17 +197,34 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
 
     return ie_contracts_df
 
+
+
+def get_blueprint_profits(): 
+    #blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;"
+    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE profit_margin > 0.2;"
+    blueprint_values_df = pd.read_sql_query(blueprint_values_query, con=engine)
+    blueprint_values_df['blueprint_profit'] = blueprint_values_df['blueprint_profit'] * 0.9 # Remove 10% from the profit margin to account for taxes and fees
+
+    #print (blueprint_values_df)
+    blueprint_values_df.set_index('blueprint_type_id', inplace=True)
+    return blueprint_values_df
+
 def get_contract_items(contract_id):
-    contract_items_url = f'https://esi.evetech.net/latest/contracts/public/items/{contract_id}/'
-    res = requests.get(contract_items_url)
-    #print(res.headers)
-    #print(res.json())
     try:
+        contract_items_url = f'https://esi.evetech.net/latest/contracts/public/items/{contract_id}/'
+        res = requests.get(contract_items_url)
+        #print(res.status_code)
+        #print(res.headers)
+        #print(res.json())
         items = res.json()
+    except requests.JSONDecodeError: 
+        print(f"Contract {contract_id} already finished")
+        logging.error(f"Contract {contract_id} already finished: {e}. HTTP: {res.status_code} Headers: {res.headers} Json: None")
+        empty_json = '{}'
+        return empty_json
     except Exception as e:
-        print(f"Error on get_contract_items() when processing contract_id {contract_id}")
-        print(e)
-        logging.error(f"Error on get_contract_items() when processing contract_id {contract_id}: {e}")
+        print(f"Error on get_contract_items() when processing contract_id {contract_id}: {e}")
+        logging.error(f"Error on get_contract_items() when processing contract_id {contract_id}: {e}. HTTP: {res.status_code} Headers: {res.headers} Json: None")
         empty_json = '{}'
         return empty_json
     return items
@@ -217,13 +237,14 @@ def get_contract_items_value(contract_id, prices_dataframe):
     except Exception as e:
         print(f"Error on get_contract_items_value() when processing contract_id {contract_id}")
         print(e)
-        logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}\n items returned: {items}")
+        logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
         return None
     if 'type_id' not in items_df.columns:
             logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
             return None  # Skip contracts without a 'type_id'
     #print("dataframe before prices: \n", items_df)
-    merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Added how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
+    merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Using how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
+    merged_items_df['type_name'] = merged_items_df['type_id'].map(get_item_names())
     
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
@@ -231,16 +252,18 @@ def get_contract_items_value(contract_id, prices_dataframe):
     merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['jita_price'] # If items are requested (is_included == False), add their total value to the column "requested_price"
     if ignore_rigs:
          merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'jita_price'] = 0 # Set rig value to 0 (this assumes every rig is fitted and cannot be sold)
-
+    
+    #print("dataframe before merging bp profit:\n", merged_items_df)
     if 'is_blueprint_copy' in merged_items_df.columns:
-        #merged_items_df = merged_items_df.merge(blueprint_values_df, left_on='type_id', right_on='blueprint_type_id', how='left')
         merged_items_df = merged_items_df.merge(blueprint_values_df['blueprint_profit'], left_on='type_id', right_index=True, how='left')
-        merged_items_df.loc
-        merged_items_df.loc[merged_items_df['blueprint_profit'] > 0 , 'jita_price'] = merged_items_df['blueprint_profit']
-        merged_items_df.loc[merged_items_df['blueprint_profit'] <= 0 , 'jita_price'] = 0
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'jita_price'] = merged_items_df['blueprint_profit'] # blueprint_values_df only has blueprints where profit margin is >20%
+        mask = (merged_items_df['is_blueprint_copy'] == True) & ~(merged_items_df['type_id'].isin(blueprint_values_df.index)) # Mask to find blueprint copies that are still missing an value and will be set to 0. 
+        merged_items_df.loc[mask, 'jita_price'] = 0
+        #merged_items_df.loc[merged_items_df['blueprint_profit'] > 0 , 'jita_price'] = merged_items_df['blueprint_profit']
+        #merged_items_df.loc[merged_items_df['blueprint_profit'] <= 0 , 'jita_price'] = 0
     #print("dataframe after merging bp profit:\n", merged_items_df)
 
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0 # If items requested also set their value as 0 in the contract
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0 # If item is requested, set their value as 0 in the contract
     merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
     merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume']
     if 'is_blueprint_copy' in merged_items_df.columns:
@@ -254,19 +277,8 @@ def get_contract_items_value(contract_id, prices_dataframe):
     else:
         total_requested_price = 0
     total_packaged_volume = merged_items_df['total_volume'].sum() # Calculate total volume
-    #print(f"Total sum: {total_sum}")
-    #print(f"Total volume: {total_packaged_volume}")
     #print("final result:\n",merged_items_df)
     return total_sum, total_packaged_volume, total_requested_price
-
-def get_blueprint_profits(): 
-    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;" ### Every damn blueprint in the universe
-    blueprint_values_df = pd.read_sql_query(blueprint_values_query, con=engine)
-    blueprint_values_df['blueprint_profit'] = blueprint_values_df['blueprint_profit'] * 0.9 # Remove 10% from the profit margin to account for taxes and fees
-
-    #print (blueprint_values_df)
-    blueprint_values_df.set_index('blueprint_type_id', inplace=True)
-    return blueprint_values_df
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # trying this to remove decimals
