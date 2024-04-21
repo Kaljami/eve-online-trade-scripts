@@ -189,3 +189,4 @@ static/types.en-us.json
 static/types_packaged_volumes.json
 cron_runner*.sh
 logs/*
+templates/*

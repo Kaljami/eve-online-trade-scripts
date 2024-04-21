@@ -21,6 +21,7 @@ import logging
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import pickle
+import warnings
 
 ### SETTINGS BEGIN
 
@@ -144,8 +145,8 @@ def load_packaged_volumes():
 
 def process_contract(contract_id, prices_dataframe):
     try:
-        contract_value, contract_packaged_volume, total_requested_price = get_contract_items_value(contract_id, prices_dataframe)
-        return contract_value, contract_packaged_volume, total_requested_price
+        contract_value, contract_packaged_volume, total_requested_price, top_item_name = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume, total_requested_price, top_item_name
     except Exception as e:
         logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
         return 0, 0, 0
@@ -168,6 +169,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     contract_values = []
     contract_packaged_volumes = []
     total_requested_prices = []
+    top_item_names = []
     
     if contract_items_price_type == 'buy':
         prices_dataframe = prices_dataframe_buy
@@ -179,14 +181,16 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
         for future in tqdm(futures, desc=f"Processing {region_name} contracts", unit="contracts", total=len(futures)):
-            contract_value, contract_packaged_volume, total_requested_price = future.result()
+            contract_value, contract_packaged_volume, total_requested_price, top_item_name = future.result()
             contract_values.append(contract_value)
             contract_packaged_volumes.append(contract_packaged_volume)
             total_requested_prices.append(total_requested_price)
+            top_item_names.append(top_item_name)
 
     ie_contracts_df['jita_buy_value'] = contract_values
     ie_contracts_df['packaged_volume'] = contract_packaged_volumes
     ie_contracts_df['price'] = ie_contracts_df['price'] + total_requested_prices
+    ie_contracts_df['top_item_name'] = top_item_names
     ie_contracts_df['region_name'] = region_name
 
     return ie_contracts_df
@@ -211,14 +215,9 @@ def get_contract_items(contract_id):
         #print(res.headers)
         #print(res.json())
         items = res.json()
-    except requests.JSONDecodeError: 
-        print(f"Contract {contract_id} already finished")
-        logging.error(f"Contract {contract_id} already finished: {e}. HTTP: {res.status_code} Headers: {res.headers} Json: None")
-        empty_json = '{}'
-        return empty_json
     except Exception as e:
-        print(f"Error on get_contract_items() when processing contract_id {contract_id}: {e}")
-        logging.error(f"Error on get_contract_items() when processing contract_id {contract_id}: {e}. HTTP: {res.status_code} Headers: {res.headers} Json: None")
+        print(f"Error on get_contract_items() when processing contract_id {contract_id}: {e} (Expecting value on line 1 means that contract was already finished)")
+        logging.error(f"Error on get_contract_items() when processing contract_id {contract_id}: {e}. HTTP {res.status_code}")
         empty_json = '{}'
         return empty_json
     return items
@@ -232,12 +231,17 @@ def get_contract_items_value(contract_id, prices_dataframe):
         print(f"Error on get_contract_items_value() when processing contract_id {contract_id}")
         print(e)
         logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
-        return None
+        return 0,0,0,'no market value'
     if 'type_id' not in items_df.columns:
             logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
-            return None  # Skip contracts without a 'type_id'
+            return 0,0,0,'no market value'  # Skip contracts without a 'type_id'
     #print("dataframe before prices: \n", items_df)
     merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Using how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
+    
+    # Merge items_df with prices_dataframe_sell based on type_id
+    merged_items_df = items_df.merge(prices_dataframe_average, left_on='type_id', right_index=True, how='left', suffixes=('', '_avg')) # BPO's always use average price
+
+    #merged_items_df.loc[merged_items_df['type_id'].isin(all_blueprint_type_ids), 'price'] = prices_dataframe_sell.loc[29086,'price']
     merged_items_df['type_name'] = merged_items_df['type_id'].map(get_item_names())
     
     #print("prices df: \n", prices_dataframe)
@@ -269,7 +273,17 @@ def get_contract_items_value(contract_id, prices_dataframe):
         total_requested_price = 0
     total_packaged_volume = merged_items_df['total_volume'].sum() # Calculate total volume
     #print("final result:\n",merged_items_df)
-    return total_sum, total_packaged_volume, total_requested_price
+    with warnings.catch_warnings():
+        warnings.simplefilter(action='ignore', category=FutureWarning)
+        try:
+            max_price_index = merged_items_df['price'].idxmax()
+            top_item_name = merged_items_df.at[max_price_index, 'type_name']
+            logging.debug(f"top_item for contract {contract_id} is {top_item_name}")
+        except:
+            top_item_name = 'no market value'
+            logging.debug(f"top_item for contract {contract_id} is '{top_item_name}'. None of the items in the contract have value data on the market.")
+    #print("final result:\n",merged_items_df)
+    return total_sum, total_packaged_volume, total_requested_price, top_item_name
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # remove decimals to make ints pretty
@@ -331,7 +345,7 @@ def send_discord_message(message): # Required to send a ping as a separate messa
         print("Payload delivered successfully, code {}.".format(send_to_webhook.status_code))
         logging.debug("Notification message delivered successfully, code {}.".format(send_to_webhook.status_code))
 
-def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value): # Create a new embed instance to be sent
+def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name): # Create a new embed instance to be sent
     
     if (
     (discount > (good_profit_percentage/100)) and
@@ -355,6 +369,7 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     #embed.add_field(name="Volume", value=f"{volume} m3", inline=True)
     embed.add_field(name="Packaged volume", value=f"{p_packaged_volume} m3", inline=True)
     embed.add_field(name="Age", value=age_str, inline=True)
+    embed.add_field(name="Most valuable item", value=top_item_name, inline=True)
 
     # Add a link to the contract to be used in the in-game notepad
     embed.add_field(name="Paste to in-game notepad", value=f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>", inline=False)
@@ -376,6 +391,7 @@ async def really_send_embed():
         date_issued = pd.to_datetime(row['date_issued'], utc=True)
         region_name = row['region_name']
         packaged_volume = row['packaged_volume']
+        top_item_name = row['top_item_name']
 
         # Calculations
         discount = 1 - price/jita_buy_value
@@ -396,7 +412,7 @@ async def really_send_embed():
             print("")
             
             #print(f"Attempting to send a message")
-            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value)
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name)
             await send_embed(discord_webhook_url, embed)
             #print ("Message sent")
             n_good_profit_margin += 1

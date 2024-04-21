@@ -220,3 +220,43 @@ interesting_blueprints = get_blueprint_type_ids([
     'Micro Jump Drive'])
 print(interesting_blueprints)
 """
+
+def get_all_blueprint_type_ids(): 
+    try:
+        with open('static/types.en-us.json', 'r') as file:
+            print("loading types from json into memory...")
+            types = json.load(file)
+
+    except FileNotFoundError:
+        # If the JSON files don't exist, load the YAML files and convert them to JSON
+        with open('static/types.en-us.yaml', 'r', encoding='utf-8') as file:
+            print("loading types from yaml into memory...")
+            types = yaml.safe_load(file)
+
+        # Save the data as JSON for faster loading next time
+        with open('static/types.en-us.json', 'w') as file:
+            json.dump(types, file)
+
+    blueprint_groups = get_all_blueprint_groups()
+    blueprint_type_ids = []
+    blueprint_type_names = []
+
+    print("Processing types...")
+    for type_id, data in types.items():
+        try:
+            group_id = data.get('group_id', None)
+            type_name = data.get('name', None)
+            if group_id in blueprint_groups:
+                blueprint_type_ids.append(int(type_id))
+                blueprint_type_names.append(type_name)
+
+        except Exception as e:
+            print(f"Error when processing type_id {type_id}: {e}")
+    blueprint_df = pd.DataFrame({'type_id': blueprint_type_ids, 'type_name': blueprint_type_names})
+    print("These blueprints matched the search terms:\n",blueprint_df)
+
+    with open(os.path.join('cache', 'all_blueprint_type_ids.pkl'), 'wb') as file: 
+            pickle.dump(blueprint_type_ids, file)
+            print("all_blueprint_type_ids saved as cache/all_blueprint_type_ids.pkl")
+
+    return blueprint_type_ids
