@@ -228,13 +228,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
     merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True)
-
-    merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
-    merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume']
-
-
     merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['jita_price'] # If items are requested (is_included == False), add their total value to the column "requested_price"
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0 # If items requested also set their value as 0 in the contract
     if ignore_rigs:
          merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'jita_price'] = 0 # Set rig value to 0 (this assumes every rig is fitted and cannot be sold)
 
@@ -244,9 +238,14 @@ def get_contract_items_value(contract_id, prices_dataframe):
         merged_items_df.loc
         merged_items_df.loc[merged_items_df['blueprint_profit'] > 0 , 'jita_price'] = merged_items_df['blueprint_profit']
         merged_items_df.loc[merged_items_df['blueprint_profit'] <= 0 , 'jita_price'] = 0
-        merged_items_df['total_price'] = merged_items_df['runs'] * merged_items_df['jita_price']
     #print("dataframe after merging bp profit:\n", merged_items_df)
-    
+
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0 # If items requested also set their value as 0 in the contract
+    merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
+    merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume']
+    if 'is_blueprint_copy' in merged_items_df.columns:
+        #merged_items_df['total_price'] = merged_items_df['runs'] * merged_items_df['jita_price']
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'total_price'] = merged_items_df['runs'] * merged_items_df['jita_price']
     #print(merged_items_df)
     # Calculate the total sum for all rows
     total_sum = merged_items_df['total_price'].sum()
@@ -413,7 +412,7 @@ for region in regions:
     ie_contracts_df['date_discovered'] = current_timestamp
     try:
         ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
-        print("Dataframe saved to database: \n", ie_contracts_df)
+        #print("Dataframe saved to database: \n", ie_contracts_df)
     except Exception as e:
         print(e)
         print(f"Saving {region} contracts to database failed. Trying again.")
