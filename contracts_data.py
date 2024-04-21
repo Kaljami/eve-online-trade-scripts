@@ -7,6 +7,7 @@ import nest_asyncio
 from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.price_differences import get_prices_from_station
+from data_retrieval.order_data import get_average_prices
 from data_processing.types_in_group import get_rig_type_ids
 from data_processing.sde_utils import get_item_names
 from datetime import datetime, timezone
@@ -42,6 +43,11 @@ maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
 ignore_rigs = True
 
+# Prices: 
+contract_items_price_system = 'Jita'
+contract_items_price_type = 'buy' # Options are: 'buy', 'sell', 'average'. Determines which prices are used when evaluating contract's value. Buy is highest buy order for each item in specified market, Sell is lowest sell order there. Average is average estimated price across the universe. 
+use_cached_prices = True
+
 # Discord:
 sender_name = os.getenv("discord_sender_name")
 sender_icon_url = os.getenv("discord_sender_icon_url")
@@ -62,53 +68,40 @@ client = discord.Client(intents=intents)
 
 def get_num_pages(region_id):
     """Use requests to grab a page of contracts, returning the X-Pages header from the response."""
-
     contracts_url = f'https://esi.evetech.net/latest/contracts/public/{region_id}/'
-
     params = {}
-
     res = requests.get(contracts_url, params=params)
-
     return int(res.headers['X-Pages'])
 
 async def get_page(session, region_id, page):
     """Async get a page of contracts for a given region."""
-
     contracts_url = f'https://esi.evetech.net/latest/contracts/public/{region_id}/'
-
     params = {
         'page': page
     }
-
     res = await session.get(contracts_url, params=params)
     return await res.json()
 
 
 async def async_get_all_contracts(region_id, pages):
     """Async get all pages of contracts for a given region."""
-
     async with aiohttp.ClientSession() as session:
         tasks = [
             get_page(session, region_id, page)
             for page in
             range(1, pages + 1)
         ]
-
         return await asyncio.gather(*tasks)
     
 def get_all_contracts_concurrent(region_name):
     """Master function to control async loop and process results."""
 
     names_to_id = {'Domain': 10000043, 'The Forge': 10000002, 'Sinq Laison': 10000032, 'Heimatar': 10000030, 'Metropolis': 10000042, 'Delve': 10000060, 'Placid': 10000048, 'Essence': 10000064, 'The Citadel': 10000033, 'Lonetrek': 10000016, 'Querious':10000050, 'Period Basis':10000063, 'Fountain':10000058, 'Aridia':10000054}
-    #names_to_stn = {'Amarr': 60008494, 'Jita': 60003760, 'Dodixie': 60011866, 'Rens': 60004588, 'Hek': 60005686, '1DQ-1A': 1030049082711}
-
     region_id = names_to_id[region_name]
-    #station_id = names_to_stn[region_name]
-
     pages = get_num_pages(region_id)  
+
     # Fix for Jupyter notebook
     nest_asyncio.apply()
-
     try:
         loop = asyncio.get_event_loop()
         contracts = loop.run_until_complete(async_get_all_contracts(region_id, pages))
@@ -122,7 +115,6 @@ def get_all_contracts(region_name, cached):
         print ("we don't have cache for contracts")
     else:
         all_contracts = get_all_contracts_concurrent(region_name)
-
     return all_contracts
 
 def convert_date_string_to_datetime(date_string):
@@ -132,16 +124,15 @@ def convert_date_string_to_datetime(date_string):
     formatted_date = date_obj.strftime('%Y-%m-%d %H:%M:%S')
     return formatted_date
 
-def get_jita_prices(cached):
+def get_market_prices(station_name, order_type, cached):
     prices_dataframe = pd.DataFrame()
-    jita_prices = get_prices_from_station("Jita", "buy", cached) #set False to get updated prices
-    prices_dataframe['jita_price'] = jita_prices
+    market_prices = get_prices_from_station(station_name, order_type, cached) #set False to get updated prices
+    prices_dataframe['price'] = market_prices
     if cached == False:
-        print("jita_price data downloaded")
-    #print(str(prices_dataframe))
+        print(f"{station_name} {order_type} order price data downloaded")
     return prices_dataframe
 
-def load_json_as_dataframe():
+def load_packaged_volumes():
     # Load JSON data from file
     with open("static/types_packaged_volumes.json", 'r') as file:
         data_dict = json.load(file)
@@ -150,8 +141,6 @@ def load_json_as_dataframe():
     dataframe = pd.DataFrame.from_dict(data_dict)
     dataframe.index = dataframe.index.astype(int)
     return dataframe
-
-
 
 def process_contract(contract_id, prices_dataframe):
     try:
@@ -162,7 +151,6 @@ def process_contract(contract_id, prices_dataframe):
         return 0, 0, 0
 
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
-    prices_dataframe = get_jita_prices(True)
     #print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
     contracts_json = get_all_contracts(region_name, cached)
     #print(f'Got {len(contracts_json)} contracts!')
@@ -181,6 +169,12 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     contract_packaged_volumes = []
     total_requested_prices = []
     
+    if contract_items_price_type == 'buy':
+        prices_dataframe = prices_dataframe_buy
+    if contract_items_price_type == 'sell':
+        prices_dataframe = prices_dataframe_sell
+    if contract_items_price_type == 'average':
+        prices_dataframe = prices_dataframe_average
     # Multithreading for fetching data
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
@@ -249,26 +243,23 @@ def get_contract_items_value(contract_id, prices_dataframe):
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
     merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True)
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['jita_price'] # If items are requested (is_included == False), add their total value to the column "requested_price"
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['price'] # If items are requested (is_included == False), add their total value to the column "requested_price"
     if ignore_rigs:
-         merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'jita_price'] = 0 # Set rig value to 0 (this assumes every rig is fitted and cannot be sold)
+         merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'price'] = 0 # Set rig value to 0 (this assumes every rig is fitted and cannot be sold)
     
     #print("dataframe before merging bp profit:\n", merged_items_df)
     if 'is_blueprint_copy' in merged_items_df.columns:
         merged_items_df = merged_items_df.merge(blueprint_values_df['blueprint_profit'], left_on='type_id', right_index=True, how='left')
-        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'jita_price'] = merged_items_df['blueprint_profit'] # blueprint_values_df only has blueprints where profit margin is >20%
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'price'] = merged_items_df['blueprint_profit'] # blueprint_values_df only has blueprints where profit margin is >20%
         mask = (merged_items_df['is_blueprint_copy'] == True) & ~(merged_items_df['type_id'].isin(blueprint_values_df.index)) # Mask to find blueprint copies that are still missing an value and will be set to 0. 
-        merged_items_df.loc[mask, 'jita_price'] = 0
-        #merged_items_df.loc[merged_items_df['blueprint_profit'] > 0 , 'jita_price'] = merged_items_df['blueprint_profit']
-        #merged_items_df.loc[merged_items_df['blueprint_profit'] <= 0 , 'jita_price'] = 0
+        merged_items_df.loc[mask, 'price'] = 0
     #print("dataframe after merging bp profit:\n", merged_items_df)
 
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'jita_price'] = 0 # If item is requested, set their value as 0 in the contract
-    merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['jita_price']
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'price'] = 0 # If item is requested, set their value as 0 in the contract
+    merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['price']
     merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume']
     if 'is_blueprint_copy' in merged_items_df.columns:
-        #merged_items_df['total_price'] = merged_items_df['runs'] * merged_items_df['jita_price']
-        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'total_price'] = merged_items_df['runs'] * merged_items_df['jita_price']
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'total_price'] = merged_items_df['runs'] * merged_items_df['price']
     #print(merged_items_df)
     # Calculate the total sum for all rows
     total_sum = merged_items_df['total_price'].sum()
@@ -281,7 +272,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     return total_sum, total_packaged_volume, total_requested_price
 
 def prettify_num(number):
-    pretty_num = f'{int(number):,}' # trying this to remove decimals
+    pretty_num = f'{int(number):,}' # remove decimals to make ints pretty
     return pretty_num
 def prettify_age(age):
     # Get the components of the timedelta object (days, hours, minutes)
@@ -300,16 +291,14 @@ def prettify_age(age):
     return age_str
 
 def num_to_string(number):
-    # Define the suffixes for large numbers
     suffixes = ['', 'thousand', 'million', 'billion', 'trillion', 'quadrillion', 'quintillion']
     
-    # Determine the appropriate suffix for the given number
+    # Set the appropriate suffix for the given number
     suffix_index = 0
     while number >= 1000:
         number /= 1000
         suffix_index += 1
     
-    # Format the number with the appropriate suffix
     formatted_number = f'{number:.0f} {suffixes[suffix_index]}'
     return formatted_number
 
@@ -324,6 +313,7 @@ async def send_embed(webhook_url, embed):
 
 def send_discord_message(message): # Required to send a ping as a separate message because embeds can't have tags 
     #print(f"Attempting to send a message")
+    logging.info(f"Attempting to send a message: {message}")
     payload = {
         "content" : message,
         "username" : sender_name,
@@ -332,7 +322,7 @@ def send_discord_message(message): # Required to send a ping as a separate messa
     send_to_webhook = requests.post(discord_webhook_url, json = payload)
     try:
         send_to_webhook.raise_for_status()
-        sleep(2) # add a small delay to prevent hitting discord rate limit
+        sleep(1) # add a small delay to prevent hitting discord rate limit
     except requests.exceptions.HTTPError as err:
         print(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message.")
         logging.error(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message.")
@@ -378,6 +368,7 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
 async def really_send_embed():
     n_good_profit_margin = 0
     for index, row in result_df.iterrows():
+        # Get stuff from the dataframe into variables
         contract_id = row['contract_id']
         price = row['price']
         jita_buy_value = row['jita_buy_value']
@@ -414,9 +405,16 @@ async def really_send_embed():
 async def main():
     await really_send_embed()
 
-packaged_volumes_dataframe = load_json_as_dataframe()
+packaged_volumes_dataframe = load_packaged_volumes()
 rig_type_ids = get_rig_type_ids()
 blueprint_values_df = get_blueprint_profits()
+
+prices_dataframe_sell = get_market_prices("Jita", 'sell', use_cached_prices)
+#print(prices_dataframe_sell)
+prices_dataframe_buy = get_market_prices("Jita", 'buy', use_cached_prices)
+#print(prices_dataframe_buy)
+prices_dataframe_average = get_average_prices(use_cached_prices)
+#print(prices_dataframe_average)
 
 current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 for region in regions:
@@ -425,6 +423,7 @@ for region in regions:
     try:
         ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
         #print("Dataframe saved to database: \n", ie_contracts_df)
+        logging.info(f"Dataframe of {region} contracts saved to database")
     except Exception as e:
         print(e)
         print(f"Saving {region} contracts to database failed. Trying again.")
@@ -436,6 +435,7 @@ for region in regions:
             print(e)
             print(f"Saving {region} contracts to database failed again. Skipping.")
             logging.error(f"Saving {region} contracts to database failed again. Skipping. {e}")
+print("All selected regions checked and new contracts saved to database")
 
 
 # Run a SQL query to select entries where 'price' is lower than 'jita_buy_value'
@@ -451,15 +451,13 @@ query = f"""
 
 current_timestamp = datetime.now(timezone.utc)
 
-# Execute the query and print the results
 result_df = pd.read_sql_query(query, con=engine)
 #print("New contracts priced below jita buy:\n", result_df)
 n_new_profitable_contracts = len(result_df.index)
 logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
-print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
+print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price. Starting to send Discord notifications.")
 #print("here's the result_df")
 #print(result_df)
-# Iterate through rows and print contract_id, price, and jita_buy_value
 
 asyncio.run(main())
 

@@ -4,6 +4,7 @@ import pickle
 import aiohttp
 import asyncio
 import requests
+import pandas as pd
 
 
 def get_num_pages(region_id, order_type):
@@ -34,6 +35,17 @@ async def get_page(session, region_id, page, order_type):
 
     return await res.json()
 
+def get_all_orders(system_name, order_type, cached):
+    """Given one of 'Jita'/'Amarr', return all of the sell orders in the region."""
+    if cached == True:
+        print (f"Getting {system_name} {order_type} orders from cached data")
+        return get_orders_from_cache(system_name, order_type)
+
+
+    all_orders = get_all_orders_concurrent(system_name, order_type)
+    save_orders_to_cache(system_name, all_orders, order_type)
+
+    return all_orders
 
 async def async_get_all_orders(region_id, pages, order_type):
     """Async get all pages of market orders for a given region."""
@@ -88,13 +100,21 @@ def save_orders_to_cache(system_name, orders, order_type):
         pickle.dump(orders, fp)
 
 
-def get_all_orders(system_name, order_type, cached):
-    """Given one of 'Jita'/'Amarr', return all of the sell orders in the region."""
-    if cached == True:
-        print (f"Getting {system_name} {order_type} orders from cached data")
-        return get_orders_from_cache(system_name, order_type)
-
-    all_orders = get_all_orders_concurrent(system_name, order_type)
-    save_orders_to_cache(system_name, all_orders, order_type)
-
-    return all_orders
+def get_average_prices(cached):
+    system_name = 'Universe'
+    order_type = 'average'
+    if cached:
+        print (f"Getting {system_name} {order_type} prices from cached data")
+        avg_prices_data = get_orders_from_cache(system_name, order_type)
+    if not cached:
+        print (f"Getting {system_name} {order_type} prices from ESI")
+        avg_prices_url = f"https://esi.evetech.net/latest/markets/prices/?datasource=tranquility"
+        avg_prices_response = requests.get(avg_prices_url)
+        avg_prices_data = avg_prices_response.json()
+        save_orders_to_cache(system_name, avg_prices_data, order_type)
+    avg_prices_dataframe = pd.DataFrame(avg_prices_data)
+    avg_prices_dataframe = avg_prices_dataframe.reindex(columns=['type_id','average_price'])
+    avg_prices_dataframe = avg_prices_dataframe.rename(columns={'average_price':'price'})
+    avg_prices_dataframe.set_index('type_id', inplace=True)
+    #print(str(avg_prices_dataframe))
+    return avg_prices_dataframe
