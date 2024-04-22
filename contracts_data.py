@@ -204,8 +204,8 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     
     try:
         region_items_df = reduce(merge_dfs, items_dfs)
-        region_items_df.to_html('exports/test_dataframe.html')
     except Exception as e:
+        print(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
         logging.info(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
         region_items_df = pd.DataFrame() # if no new contracts in the region, return an empty dataframe
         return ie_contracts_df,region_items_df
@@ -217,6 +217,7 @@ def merge_dfs(left, right):
         return pd.merge(left, right, how='outer')
     except Exception as e:
         print(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
+        logging.error(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
 
 
 
