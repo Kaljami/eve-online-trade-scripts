@@ -15,13 +15,12 @@ from time import sleep
 import discord
 from discord import Embed
 discord.VoiceClient.warn_nacl = False # gets rid of warning in logging
-import yaml
 import json
 import logging
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import pickle
 import warnings
+from functools import reduce
 
 ### SETTINGS BEGIN
 
@@ -145,11 +144,12 @@ def load_packaged_volumes():
 
 def process_contract(contract_id, prices_dataframe):
     try:
-        contract_value, contract_packaged_volume, total_requested_price, top_item_name = get_contract_items_value(contract_id, prices_dataframe)
-        return contract_value, contract_packaged_volume, total_requested_price, top_item_name
+        contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df
     except Exception as e:
-        logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
-        return 0, 0, 0
+        logging.error(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
+        print(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
+        return 0, 0, 0, 'no market value', pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]) # Trying to pass a dummy dataframe if getting the items fails
 
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     #print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
@@ -157,11 +157,11 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     #print(f'Got {len(contracts_json)} contracts!')
     logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
     contracts_df = pd.DataFrame.from_records(contracts_json)
-    ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange']
+    ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange'] # ie = item exchange contracts only
 
     existing_contract_ids_query = "SELECT contract_id FROM contracts;"
     existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
-    ie_contracts_df = ie_contracts_df[~ie_contracts_df['contract_id'].isin(existing_contract_ids)]
+    ie_contracts_df = ie_contracts_df[~ie_contracts_df['contract_id'].isin(existing_contract_ids)] # remove all the contracts that already exist in the database
 
     ie_contracts_df['date_issued'] = ie_contracts_df['date_issued'].apply(convert_date_string_to_datetime)
     ie_contracts_df['date_expired'] = ie_contracts_df['date_expired'].apply(convert_date_string_to_datetime)
@@ -170,6 +170,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     contract_packaged_volumes = []
     total_requested_prices = []
     top_item_names = []
+    items_dfs = []
     
     if contract_items_price_type == 'buy':
         prices_dataframe = prices_dataframe_buy
@@ -179,21 +180,43 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
         prices_dataframe = prices_dataframe_average
     # Multithreading for fetching data
     with ThreadPoolExecutor() as executor:
+        
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
         for future in tqdm(futures, desc=f"Processing {region_name} contracts", unit="contracts", total=len(futures)):
-            contract_value, contract_packaged_volume, total_requested_price, top_item_name = future.result()
-            contract_values.append(contract_value)
-            contract_packaged_volumes.append(contract_packaged_volume)
-            total_requested_prices.append(total_requested_price)
-            top_item_names.append(top_item_name)
+            try:
+                contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df = future.result()
+                if items_df is None:
+                    raise Exception(f"items_df for contract_id {ie_contracts_df['contract_id'].iloc[0]} was None. Shape: {items_df.shape}")
+                contract_values.append(contract_value)
+                contract_packaged_volumes.append(contract_packaged_volume)
+                total_requested_prices.append(total_requested_price)
+                top_item_names.append(top_item_name)
+                items_dfs.append(items_df)
+            except Exception as e:
+                print(f"Error while processing contract {ie_contracts_df['contract_id']}: {e} Future result: {future.result()}")
+            
 
     ie_contracts_df['jita_buy_value'] = contract_values
     ie_contracts_df['packaged_volume'] = contract_packaged_volumes
     ie_contracts_df['price'] = ie_contracts_df['price'] + total_requested_prices
     ie_contracts_df['top_item_name'] = top_item_names
     ie_contracts_df['region_name'] = region_name
+    
+    try:
+        region_items_df = reduce(merge_dfs, items_dfs)
+        region_items_df.to_html('exports/test_dataframe.html')
+    except Exception as e:
+        logging.info(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
+        region_items_df = pd.DataFrame() # if no new contracts in the region, return an empty dataframe
+        return ie_contracts_df,region_items_df
 
-    return ie_contracts_df
+    return ie_contracts_df, region_items_df
+
+def merge_dfs(left, right):
+    try:
+        return pd.merge(left, right, how='outer')
+    except Exception as e:
+        print(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
 
 
 
@@ -231,10 +254,10 @@ def get_contract_items_value(contract_id, prices_dataframe):
         print(f"Error on get_contract_items_value() when processing contract_id {contract_id}")
         print(e)
         logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}: {e}")
-        return 0,0,0,'no market value'
+        return 0, 0, 0,'no market value', pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]) # Trying to pass a dummy dataframe if getting the items fails
     if 'type_id' not in items_df.columns:
             logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
-            return 0,0,0,'no market value'  # Skip contracts without a 'type_id'
+            return 0, 0, 0,'no market value', pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0])  # Skip contracts without a 'type_id'
     #print("dataframe before prices: \n", items_df)
     merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Using how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
     
@@ -272,18 +295,19 @@ def get_contract_items_value(contract_id, prices_dataframe):
     else:
         total_requested_price = 0
     total_packaged_volume = merged_items_df['total_volume'].sum() # Calculate total volume
-    #print("final result:\n",merged_items_df)
+
     with warnings.catch_warnings():
         warnings.simplefilter(action='ignore', category=FutureWarning)
         try:
             max_price_index = merged_items_df['price'].idxmax()
             top_item_name = merged_items_df.at[max_price_index, 'type_name']
-            logging.debug(f"top_item for contract {contract_id} is {top_item_name}")
         except:
             top_item_name = 'no market value'
-            logging.debug(f"top_item for contract {contract_id} is '{top_item_name}'. None of the items in the contract have value data on the market.")
     #print("final result:\n",merged_items_df)
-    return total_sum, total_packaged_volume, total_requested_price, top_item_name
+    merged_items_df['contract_id'] = contract_id
+    merged_items_df['row_id'] = merged_items_df.index
+    #print("final result:\n",merged_items_df)
+    return total_sum, total_packaged_volume, total_requested_price, top_item_name, merged_items_df
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # remove decimals to make ints pretty
@@ -434,11 +458,10 @@ prices_dataframe_average = get_average_prices(use_cached_prices)
 
 current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 for region in regions:
-    ie_contracts_df = get_all_contracts_from_region(region, False)
-    ie_contracts_df['date_discovered'] = current_timestamp
+    ie_contracts_df, region_items_df = get_all_contracts_from_region(region, False)
+    ie_contracts_df['date_discovered'] = current_timestamp # uses local time
     try:
         ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
-        #print("Dataframe saved to database: \n", ie_contracts_df)
         logging.info(f"Dataframe of {region} contracts saved to database")
     except Exception as e:
         print(e)
@@ -447,10 +470,27 @@ for region in regions:
         try:
             ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
             print("New contracts saved to database!")
+            logging.info(f"Dataframe of {region} contracts saved to database")
         except Exception as e:
             print(e)
             print(f"Saving {region} contracts to database failed again. Skipping.")
             logging.error(f"Saving {region} contracts to database failed again. Skipping. {e}")
+    try:
+        region_items_df.to_sql('contract_items', con=engine, if_exists='append', index=False)
+        logging.info(f"Dataframe of {region} items saved to database")
+    except Exception as e:
+        print(e)
+        print(f"Saving {region} items to database failed. Trying again.")
+        logging.warning(f"Saving {region} items to database failed. Trying again.: {e}")
+        try:
+            region_items_df.to_sql('contract_items', con=engine, if_exists='append', index=False)
+            print("New items saved to database!")
+            logging.info(f"Dataframe of {region} items saved to database")
+        except Exception as e:
+            print(e)
+            print(f"Saving {region} items to database failed again. Skipping.")
+            logging.error(f"Saving {region} items to database failed again. Skipping. {e}")
+            
 print("All selected regions checked and new contracts saved to database")
 
 
