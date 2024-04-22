@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pandas DataFrame from CSV</title>
+    <style>
+        body {
+            background-color: #333; /* Dark background color */
+            color: #fff; /* Text color */
+            font-family: Arial, sans-serif; /* Choose a suitable font */
+            padding: 20px; /* Add some padding for better readability */
+        }
+        h1 {
+            text-align: center; /* Center align the heading */
+        }
+        form {
+            max-width: 500px; /* Limit form width for better readability */
+            margin: 0 auto; /* Center the form horizontally */
+        }
+        textarea {
+            width: 100%; /* Make the textarea full width */
+            padding: 10px; /* Add padding for better readability */
+            border: none; /* Remove default border */
+            border-radius: 10px; /* Apply rounded corners */
+            margin-bottom: 10px; /* Add some space between textarea and button */
+        }
+        input[type="submit"] {
+            width: 100%; /* Make the button full width */
+            padding: 10px; /* Add padding for better readability */
+            border: none; /* Remove default border */
+            border-radius: 10px; /* Apply rounded corners */
+            background-color: #4CAF50; /* Green button color */
+            color: white; /* Button text color */
+            cursor: pointer; /* Change cursor on hover */
+        }
+        input[type="submit"]:hover {
+            background-color: #45a049; /* Darken button color on hover */
+        }
+    </style>
+</head>
+<body>
+    <h1>Paste CSV Data</h1>
+    <form action="/process_data" method="post">
+        <textarea name="csv_data" rows="10" cols="50"></textarea><br>
+        <input type="submit" value="Create DataFrame">
+    </form>
+</body>
+</html>

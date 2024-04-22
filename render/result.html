@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataFrame Result</title>
+    <style>
+        body {
+            background-color: #333; /* Dark background color */
+            color: #fff; /* Text color */
+            font-family: Arial, sans-serif; /* Choose a suitable font */
+            padding: 20px; /* Add some padding for better readability */
+        }
+        h1 {
+            text-align: center; /* Center align the heading */
+        }
+        form {
+            max-width: 500px; /* Limit form width for better readability */
+            margin: 0 auto; /* Center the form horizontally */
+        }
+        textarea {
+            width: 100%; /* Make the textarea full width */
+            padding: 10px; /* Add padding for better readability */
+            border: none; /* Remove default border */
+            border-radius: 10px; /* Apply rounded corners */
+            margin-bottom: 10px; /* Add some space between textarea and button */
+        }
+        input[type="submit"] {
+            width: 100%; /* Make the button full width */
+            padding: 10px; /* Add padding for better readability */
+            border: none; /* Remove default border */
+            border-radius: 10px; /* Apply rounded corners */
+            background-color: #4CAF50; /* Green button color */
+            color: white; /* Button text color */
+            cursor: pointer; /* Change cursor on hover */
+        }
+        input[type="submit"]:hover {
+            background-color: #45a049; /* Darken button color on hover */
+        }
+        th {
+            text-align: left;
+            padding: 1px 6px;
+        }
+        td {
+            padding: 1px 6px;
+        }
+        .blue { color: rgb(108, 175, 209); }
+        .yellow { color: rgb(99, 95, 45); }
+        .number {
+            text-align: right;
+        }
+    </style>
+    <script>
+        // Function to format numbers with thousand separators and two decimal places
+        function formatNumber(number) {
+            return number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+    </script>
+</head>
+<body>
+    <!-- <h1>DataFrame Result</h1>
+    {{ table | safe }} -->
+    <h1>DataFrame Result</h1>
+    <table border="1">
+        <tr>
+            <th>Name</th>
+            <th>Minimum Price</th>
+            <th>Location</th>
+            <th>Jita</th>
+            <th>Amarr</th>
+            <!-- Add more columns as needed -->
+        </tr>
+        {% for index, row in result.iterrows() %}
+        <tr>
+            <td>{{ row['Material'] }}</td>
+            <td class="number">{{ row['min_price'] | format_number }}</td>
+            <td {% if row['min_price_location'] == 'Jita' %} class="blue" {% elif row['min_price_location'] == 'Amarr' %} class="yellow" {% endif %}>{{ row['min_price_location'] }}</td>
+            <td class="number">{{ row['price_Jita'] | format_number }}</td>
+            <td class="number">{{ row['price_Amarr'] | format_number }}</td>
+            <!-- Add more columns as needed -->
+        </tr>
+        {% endfor %}
+    </table>
+    <br>
+    <ul>
+        <li>Minimum price: {{ total_min }}</li>
+        <li>Price at Jita: {{ total_jita }}</li>
+        <li>Price at Amarr: {{ total_amarr }}</li>
+    </ul>
+</body>
+</html>
