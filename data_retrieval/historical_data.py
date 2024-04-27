@@ -69,7 +69,7 @@ def get_all_history(system_name, typeIDs, cached):
         print (f"Getting {system_name} market history from cached data")
         return get_orders_from_cache(system_name) 
 
-    names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ-1A': 10000060}
+    names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ1-A': 10000060}
     region_id = names_to_id[system_name]
 
     result = get_all_history_concurrent(region_id, typeIDs)

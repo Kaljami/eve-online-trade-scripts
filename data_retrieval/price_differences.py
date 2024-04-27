@@ -7,25 +7,26 @@ import data_processing.render as render
 from data_processing.sde_utils import get_item_names, get_item_sizes
 import os
 
-def get_prices_from_station(station_name, order_type, cached) -> pd.Series:
+def get_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
     # Get orders as JSON
     print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
-    orders_json = order_data.get_all_orders(station_name, order_type, cached)
+    orders_json = order_data.get_all_orders(station_name, order_type, cached, sso_session)
     #print ("get_prices_from_station says: orders_json:",str(orders_json))
     # This sometimes fails for unknown reason. 
     print(f'Got {len(orders_json)} orders!')
 
     # Convert to DF and find the best price for each typeID
     df = pd.DataFrame.from_records(orders_json)
+    print(df)
     if order_type == "sell":
         return df.groupby('type_id')['price'].min()  # pd.Series
     if order_type == "buy":
         return df.groupby('type_id')['price'].max()  # pd.Series
     
-def get_ungrouped_prices_from_station(station_name, order_type, cached) -> pd.Series:
+def get_ungrouped_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
     # Get orders as JSON. Keep all the orders instead of only the best price available. 
     print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
-    orders_json = order_data.get_all_orders(station_name, order_type, cached) #this could as well be always cached 
+    orders_json = order_data.get_all_orders(station_name, order_type, cached, sso_session) #this could as well be always cached 
     print(f'Got {len(orders_json)} orders!')
 
     # Convert to DF
@@ -60,6 +61,10 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
     print(f'Pulling out historical volume data for {days} days:')
     v = historical_df.loc[idx[:, 'volume'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
     v = v.fillna(0).mean(axis=1)
+    """ FYI TODO
+    FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+    v = v.fillna(0).mean(axis=1)
+    """
     v = v.droplevel(1, axis=0)
 
     print(f'Pulling out historical price data for {days} days:')
@@ -76,7 +81,7 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
 # Add sorting to output html. Maybe output as excel or csv? 
 # Maybe add those variables below to settings? 
 
-def price_differences(settings):
+def price_differences(settings, sso_session):
     
     minimum_margin = 0.1 # 10%
     minimum_profit_per_m3 = 1000
@@ -90,10 +95,10 @@ def price_differences(settings):
     summary = pd.DataFrame()
 
     # Order Series
-    source_prices = get_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all)
-    dest_prices = get_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all)
-    ungrouped_source_prices = get_ungrouped_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all)
-    ungrouped_dest_prices = get_ungrouped_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all)
+    source_prices = get_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all, sso_session)
+    dest_prices = get_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all, sso_session)
+    ungrouped_source_prices = get_ungrouped_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all, sso_session)
+    ungrouped_dest_prices = get_ungrouped_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all, sso_session)
 
     # Sell-side costs: Broker fees (~3.5%), Sales tax (~2.25%), Hauling fees (~2%).
     dest_prices_taxed = dest_prices * ((1 - 0.035 - 0.0225) * (1 - 0.02))

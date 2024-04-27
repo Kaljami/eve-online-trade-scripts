@@ -42,8 +42,13 @@
 <body>
     <h1>Paste CSV Data</h1>
     <form action="/process_data" method="post">
-        <textarea name="csv_data" rows="10" cols="50"></textarea><br>
-        <input type="submit" value="Create DataFrame">
+        <textarea name="data" rows="10" cols="50"></textarea><br>
+        <label for="data_format">Select data format:</label>
+        <select name="data_format" id="data_format">
+            <option value="csv">CSV</option>
+            <option value="eve_inventory">EVE Inventory</option>
+        </select><br>
+        <input type="submit" value="Process Data">
     </form>
 </body>
 </html>

@@ -55,38 +55,42 @@ def check_contract_status(contract_id, date_expired):
         sleep(5)
 
 current_timestamp = datetime.now(timezone.utc)
+    
 def update_existing_contracts():
+    conn = engine.connect()
     active_contracts = []
     expired_contracts = []
     existing_contract_ids_query = "SELECT contract_id, date_expired FROM contracts WHERE status='active';"
     existing_contract_ids_df = pd.read_sql_query(existing_contract_ids_query, con=engine)
     existing_contract_ids_df.set_index('contract_id', inplace = True)
-    print(existing_contract_ids_df)
-    active_contracts = []
-    expired_contracts = []
+
+    batch_size = 200
+    batch_counter = 0
+    total_expired = 0
+    total_active = 0
+
     for contract_id in tqdm(existing_contract_ids_df.index, desc="Processing Contracts", unit="contracts", total=len(existing_contract_ids_df.index), maxinterval=2):
-        date_expired = pd.to_datetime(existing_contract_ids_df.loc[contract_id, 'date_expired'], utc=True)
+        if batch_counter >= batch_size:
+            print(f"Batch counter is at {batch_counter}")
+            # Save the status of the processed contracts
+            expired_contracts_str = ', '.join(map(str, expired_contracts))
+            conn.execute(text(f"UPDATE contracts SET status='expired' WHERE contract_id IN ({expired_contracts_str});"))
+            expired_contracts.clear()
+            batch_counter = 0
+
+        date_expired = pd.to_datetime(existing_contract_ids_df.loc[contract_id,  'date_expired'], utc=True)
         if check_contract_status(contract_id, date_expired) == False:
             expired_contracts.append(contract_id)
+            batch_counter += 1
+            total_expired += 1
         else:
             active_contracts.append(contract_id)
-    print(f"Check finished. {len(expired_contracts)} contracts have expired or finished since last check. {len(active_contracts)} remain active.")
-    conn = engine.connect()
-    trans = conn.begin()
-    expired_contracts_str = ', '.join(map(str, expired_contracts))
-    sql_query = f"UPDATE contracts SET status='expired' WHERE contract_id IN ({expired_contracts_str});"
-    
-    try:
-        conn = engine.connect()
-        trans = conn.begin()
-        conn.execute(text(sql_query))
-        trans.commit()
-        print(f"Status of {len(expired_contracts)} contracts succesfully updated in the database.")
-    except Exception as e:
-        if 'conn' in locals():
-            trans.rollback()
-            conn.close()
-        raise e
+            total_active += 1
+
+    # Save the status of the remaining contracts
+    conn.execute(text(f"UPDATE contracts SET status='expired' WHERE contract_id IN ({expired_contracts_str});"), expired_contracts=list(expired_contracts))
+
+    print(f"Check finished. {total_expired} contracts have expired or finished since last check. {total_active} remain active.")
 
 
 update_existing_contracts()

@@ -46,6 +46,7 @@
         }
         .blue { color: rgb(108, 175, 209); }
         .yellow { color: rgb(99, 95, 45); }
+        .red { color: rgb(187, 74, 59); }
         .number {
             text-align: right;
         }
@@ -60,23 +61,29 @@
 <body>
     <!-- <h1>DataFrame Result</h1>
     {{ table | safe }} -->
-    <h1>DataFrame Result</h1>
+    <h1>Lowest and highest prices</h1>
     <table border="1">
         <tr>
             <th>Name</th>
             <th>Minimum Price</th>
-            <th>Location</th>
+            <th>Min. @</th>
+            <th>Maximum Price</th>
+            <th>Max. @</th>
             <th>Jita</th>
             <th>Amarr</th>
+            <th>1DQ1-A</th>
             <!-- Add more columns as needed -->
         </tr>
         {% for index, row in result.iterrows() %}
         <tr>
-            <td>{{ row['Material'] }}</td>
+            <td>{{ row['type_name'] }}</td>
             <td class="number">{{ row['min_price'] | format_number }}</td>
-            <td {% if row['min_price_location'] == 'Jita' %} class="blue" {% elif row['min_price_location'] == 'Amarr' %} class="yellow" {% endif %}>{{ row['min_price_location'] }}</td>
+            <td {% if row['min_price_location'] == 'Jita' %} class="blue" {% elif row['min_price_location'] == 'Amarr' %} class="yellow" {% elif row['min_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['min_price_location'] }}</td>
+            <td class="number">{{ row['max_price'] | format_number }}</td>
+            <td {% if row['max_price_location'] == 'Jita' %} class="blue" {% elif row['max_price_location'] == 'Amarr' %} class="yellow" {% elif row['max_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['max_price_location'] }}</td>
             <td class="number">{{ row['price_Jita'] | format_number }}</td>
             <td class="number">{{ row['price_Amarr'] | format_number }}</td>
+            <td class="number">{{ row['price_1DQ1-A'] | format_number }}</td>
             <!-- Add more columns as needed -->
         </tr>
         {% endfor %}
@@ -84,8 +91,9 @@
     <br>
     <ul>
         <li>Minimum price: {{ total_min }}</li>
-        <li>Price at Jita: {{ total_jita }}</li>
-        <li>Price at Amarr: {{ total_amarr }}</li>
+        <li>Total at Jita: {{ total_jita }}</li>
+        <li>Total at Amarr: {{ total_amarr }}</li>
+        <li>Total at 1DQ1-A: {{ total_delve }}</li>
     </ul>
 </body>
 </html>

@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import warnings
 from functools import reduce
+import fnmatch
 
 ### SETTINGS BEGIN
 
@@ -42,6 +43,7 @@ maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
 ignore_rigs = True
+ignore_list = ['Daredevil Blueprint', 'Strong * Booster Blueprint'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
 
 # Prices: 
 contract_items_price_system = 'Jita'
@@ -417,6 +419,12 @@ async def really_send_embed():
         region_name = row['region_name']
         packaged_volume = row['packaged_volume']
         top_item_name = row['top_item_name']
+
+        for pattern in ignore_list:
+            if fnmatch.fnmatch(row['topt_item_name'], pattern):
+                break
+        else:
+            continue
 
         # Calculations
         discount = 1 - price/jita_buy_value

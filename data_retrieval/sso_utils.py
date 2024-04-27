@@ -489,6 +489,11 @@ def get_corporation_name(corporation_id):
     res = requests.get(f'https://esi.evetech.net/latest/corporations/{corporation_id}/')
     return res.json()['name']
 
+def get_character_location(session):
+    character_id = get_character_id(session)
+    res = session.get(f'https://esi.evetech.net/latest/characters/{character_id}/location/')
+    return res.json()['solar_system_id']
+
 
 if __name__ == '__main__':
     session = oauth_session()

@@ -5,6 +5,7 @@ import requests
 
 import data_retrieval.order_import as order_import
 from data_retrieval.price_differences import get_prices_from_station
+from data_retrieval.sso_utils import get_character_location
 
 # TODO: Load character location from session and use that as region to check orders
 
@@ -80,11 +81,18 @@ def update_all(settings, session, character_id):
     buy_orders.set_index('type_id', inplace=True)
     sell_orders['is_buy_order'] = sell_orders['is_buy_order'].fillna(False)
     
-    print("Market order list found")
+    print("Character order list fetched")
 
     # Download actual up-to-date prices from ESI
-    min_prices = get_prices_from_station(settings.dest_hub, "sell", False)
-    max_prices = get_prices_from_station(settings.dest_hub, "buy", False)
+    
+    character_location = get_character_location(session) # Gets solar_system_id of current character. TODO: make it dynamically get the region id from a full list. 
+    if character_location == 30004759: #1DQ1-A
+        order_location = '1DQ1-A'
+    else:
+        order_location = 'Jita'
+    min_prices = get_prices_from_station(order_location, "sell", False, session)
+    max_prices = get_prices_from_station(order_location, "buy", False, session)
+
 
     sell_orders_f = sell_orders[sell_orders['is_buy_order'] == False]
     buy_orders_f = buy_orders[buy_orders['is_buy_order'] == True]
@@ -92,10 +100,6 @@ def update_all(settings, session, character_id):
 
     sell_orders_f['min_price'] = min_prices.apply(lambda x: reduce_price(x))
     buy_orders_f['max_price'] = max_prices.apply(lambda x: increase_price(x))
-
-    print("current player orders with minprice:")
-    print(str(sell_orders_f))
-    print(str(buy_orders_f))
     
     print("Starting prepare")
     # Go through your orders and check if there is another priced lower than yours. 

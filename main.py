@@ -40,7 +40,7 @@ def get_command(inputs):
 
 
 def start_regional():
-    url = price_differences.price_differences(settings.settings)
+    url = price_differences.price_differences(settings.settings, sso_session)
     webbrowser.open(url)
 
 def start_station():
