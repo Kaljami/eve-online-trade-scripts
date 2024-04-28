@@ -4,6 +4,8 @@ import json
 import pickle
 import os
 
+# TODO: update to work with data from mysql
+
 def get_asteroid_groups():
     with open('static/groupIDs.yaml', 'r', encoding='utf-8') as file:
         groupIDs = yaml.safe_load(file)

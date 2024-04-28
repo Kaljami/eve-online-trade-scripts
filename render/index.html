@@ -3,50 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pandas DataFrame from CSV</title>
-    <style>
-        body {
-            background-color: #333; /* Dark background color */
-            color: #fff; /* Text color */
-            font-family: Arial, sans-serif; /* Choose a suitable font */
-            padding: 20px; /* Add some padding for better readability */
-        }
-        h1 {
-            text-align: center; /* Center align the heading */
-        }
-        form {
-            max-width: 500px; /* Limit form width for better readability */
-            margin: 0 auto; /* Center the form horizontally */
-        }
-        textarea {
-            width: 100%; /* Make the textarea full width */
-            padding: 10px; /* Add padding for better readability */
-            border: none; /* Remove default border */
-            border-radius: 10px; /* Apply rounded corners */
-            margin-bottom: 10px; /* Add some space between textarea and button */
-        }
-        input[type="submit"] {
-            width: 100%; /* Make the button full width */
-            padding: 10px; /* Add padding for better readability */
-            border: none; /* Remove default border */
-            border-radius: 10px; /* Apply rounded corners */
-            background-color: #4CAF50; /* Green button color */
-            color: white; /* Button text color */
-            cursor: pointer; /* Change cursor on hover */
-        }
-        input[type="submit"]:hover {
-            background-color: #45a049; /* Darken button color on hover */
-        }
-    </style>
+    <title>Multi-appraisal alpha</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Paste CSV Data</h1>
+    <h1>Paste items to be appraised</h1>
+    <p>Use either copy of in-game inventory in 'icons' mode (CTRL+A, CTRL+C) or exported shopping list from EVE ISK Per Hour program</p>
     <form action="/process_data" method="post">
         <textarea name="data" rows="10" cols="50"></textarea><br>
-        <label for="data_format">Select data format:</label>
+        <label for="data_format">Pasted text is:</label>
         <select name="data_format" id="data_format">
-            <option value="csv">CSV</option>
             <option value="eve_inventory">EVE Inventory</option>
+            <option value="csv">EVE-IPH CSV</option>
+        </select><br>
+        <label for="user_wants_to" title="Select whether you want to buy or sell">I want to:</label>
+        <select name="user_wants_to" id="user_wants_to" title="Select whether you want to buy or sell">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+        </select><br>
+        <label for="order_type">Using order type:</label>
+        <select name="order_type" id="order_type">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
         </select><br>
         <input type="submit" value="Process Data">
     </form>

@@ -3,13 +3,34 @@ import pickle
 import pandas as pd
 import yaml
 import json
+from sqlalchemy import create_engine
+from dotenv import load_dotenv
 
+## These functions work for accessing static data from the SDE, which was imported by data_retrieval/static_data_import.py
 
-# Pre-calculated mapping of typeID -> item name. This comes from typeID.yaml, part of the Static Data Export.
+def db_connection():
+    load_dotenv()
+    db_user = os.getenv("mysql_user")
+    db_password = os.getenv("mysql_password")
+    db_host = os.getenv("mysql_host")
+    db_database = os.getenv("mysql_database_fuzzworks")
+    engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
+    return engine
+
 def get_item_names():
-    with open(os.path.join('static', 'sde_names.pkl'), 'rb') as fp:
-        return pickle.load(fp)
+    query = f'SELECT typeID, typeName FROM invTypes WHERE published = 1;'
+    engine = db_connection()
+    df = pd.read_sql_query(query, con=engine)
+    dict_df = df.set_index('typeID').to_dict()['typeName']
+    return dict_df
 
+def get_type_ids():
+    query = f'SELECT typeName, typeID FROM invTypes WHERE published = 1;'
+    engine = db_connection()
+    df = pd.read_sql_query(query, con=engine)
+    dict_df = df.set_index('typeName').to_dict()['typeID']
+    
+    return dict_df
 
 def get_item_sizes():
     with open(os.path.join('static', 'sde_sizes.pkl'), 'rb') as fp:

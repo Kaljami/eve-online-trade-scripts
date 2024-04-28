@@ -3,54 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataFrame Result</title>
-    <style>
-        body {
-            background-color: #333; /* Dark background color */
-            color: #fff; /* Text color */
-            font-family: Arial, sans-serif; /* Choose a suitable font */
-            padding: 20px; /* Add some padding for better readability */
-        }
-        h1 {
-            text-align: center; /* Center align the heading */
-        }
-        form {
-            max-width: 500px; /* Limit form width for better readability */
-            margin: 0 auto; /* Center the form horizontally */
-        }
-        textarea {
-            width: 100%; /* Make the textarea full width */
-            padding: 10px; /* Add padding for better readability */
-            border: none; /* Remove default border */
-            border-radius: 10px; /* Apply rounded corners */
-            margin-bottom: 10px; /* Add some space between textarea and button */
-        }
-        input[type="submit"] {
-            width: 100%; /* Make the button full width */
-            padding: 10px; /* Add padding for better readability */
-            border: none; /* Remove default border */
-            border-radius: 10px; /* Apply rounded corners */
-            background-color: #4CAF50; /* Green button color */
-            color: white; /* Button text color */
-            cursor: pointer; /* Change cursor on hover */
-        }
-        input[type="submit"]:hover {
-            background-color: #45a049; /* Darken button color on hover */
-        }
-        th {
-            text-align: left;
-            padding: 1px 6px;
-        }
-        td {
-            padding: 1px 6px;
-        }
-        .blue { color: rgb(108, 175, 209); }
-        .yellow { color: rgb(99, 95, 45); }
-        .red { color: rgb(187, 74, 59); }
-        .number {
-            text-align: right;
-        }
-    </style>
+    <title>Multi-appraisal alpha</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
     <script>
         // Function to format numbers with thousand separators and two decimal places
         function formatNumber(number) {
@@ -61,14 +15,14 @@
 <body>
     <!-- <h1>DataFrame Result</h1>
     {{ table | safe }} -->
-    <h1>Lowest and highest prices</h1>
+    <h1>Multi-appraisal alpha</h1>
+    <div class="table_container centered">
     <table border="1">
         <tr>
             <th>Name</th>
-            <th>Minimum Price</th>
-            <th>Min. @</th>
-            <th>Maximum Price</th>
-            <th>Max. @</th>
+            <th>QTY</th>
+            <th>Best price</th>
+            <th>Location</th>
             <th>Jita</th>
             <th>Amarr</th>
             <th>1DQ1-A</th>
@@ -77,20 +31,20 @@
         {% for index, row in result.iterrows() %}
         <tr>
             <td>{{ row['type_name'] }}</td>
-            <td class="number">{{ row['min_price'] | format_number }}</td>
-            <td {% if row['min_price_location'] == 'Jita' %} class="blue" {% elif row['min_price_location'] == 'Amarr' %} class="yellow" {% elif row['min_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['min_price_location'] }}</td>
-            <td class="number">{{ row['max_price'] | format_number }}</td>
-            <td {% if row['max_price_location'] == 'Jita' %} class="blue" {% elif row['max_price_location'] == 'Amarr' %} class="yellow" {% elif row['max_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['max_price_location'] }}</td>
-            <td class="number">{{ row['price_Jita'] | format_number }}</td>
-            <td class="number">{{ row['price_Amarr'] | format_number }}</td>
-            <td class="number">{{ row['price_1DQ1-A'] | format_number }}</td>
+            <td>{{ row['quantity'] }}</td>
+            <td class="number">{{ row['best_price'] | format_number }}</td>
+            <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
+            <td class="number">{{ row['t_price_jita'] | format_number }}</td>
+            <td class="number">{{ row['t_price_amarr'] | format_number }}</td>
+            <td class="number">{{ row['t_price_delve'] | format_number }}</td>
             <!-- Add more columns as needed -->
         </tr>
         {% endfor %}
     </table>
+    </div>
     <br>
     <ul>
-        <li>Minimum price: {{ total_min }}</li>
+        <li>Total of best prices: {{ total_best }}</li>
         <li>Total at Jita: {{ total_jita }}</li>
         <li>Total at Amarr: {{ total_amarr }}</li>
         <li>Total at 1DQ1-A: {{ total_delve }}</li>

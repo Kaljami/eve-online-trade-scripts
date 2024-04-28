@@ -17,7 +17,7 @@ def get_prices_from_station(station_name, order_type, cached, sso_session=None) 
 
     # Convert to DF and find the best price for each typeID
     df = pd.DataFrame.from_records(orders_json)
-    print(df)
+    #print(df)
     if order_type == "sell":
         return df.groupby('type_id')['price'].min()  # pd.Series
     if order_type == "buy":
