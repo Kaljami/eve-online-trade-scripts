@@ -9,14 +9,22 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 import redis
 from tqdm import tqdm
+from datetime import datetime, timezone, timedelta
+from data_retrieval.sso_utils import temp_test_oauth_session
+from data_processing.sde_utils import get_item_names
+import logging
+logging.basicConfig(filename='logs/general.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def db_connection(): # At the moment not used because of poor performance compared to redis
+
+def db_connection(fuzz=False):
     load_dotenv()
     db_user = os.getenv("mysql_user")
     db_password = os.getenv("mysql_password")
     db_host = os.getenv("mysql_host")
-    db_database = os.getenv("mysql_database")
-
+    if fuzz:
+        db_database = os.getenv("mysql_database_fuzzworks")
+    else:
+        db_database = os.getenv("mysql_database")
     engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
     return engine
 
@@ -25,6 +33,34 @@ def redis_connection():
     redis_host = os.getenv("redis_host")
     redis_client = redis.Redis(host=redis_host, port=6379, db=0)
     return redis_client
+
+def get_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
+    # Get orders as JSON
+    print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
+    orders_json = get_all_orders(station_name, order_type, cached, sso_session)
+    #print ("get_prices_from_station says: orders_json:",str(orders_json))
+    # This sometimes fails for unknown reason. 
+    print(f'Got {len(orders_json)} orders!')
+
+    # Convert to DF and find the best price for each typeID
+    df = pd.DataFrame.from_records(orders_json)
+    #print(df)
+    if order_type == "sell":
+        return df.groupby('type_id')['price'].min()  # pd.Series
+    if order_type == "buy":
+        return df.groupby('type_id')['price'].max()  # pd.Series
+    
+def get_ungrouped_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
+    # Get orders as JSON. Keep all the orders instead of only the best price available. 
+    print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
+    orders_json = get_all_orders(station_name, order_type, cached, sso_session) #this could as well be always cached if it's always called alongside with get_prices_from_station
+    print(f'Got {len(orders_json)} orders!')
+
+    # Convert to DF
+    df = pd.DataFrame.from_records(orders_json)
+    result_df = df.copy()
+    print (str(result_df))
+    return result_df
 
 def get_num_pages(region_id, order_type, sso_session):
     params = {'order_type': order_type}
@@ -173,3 +209,116 @@ def get_average_prices(cached):
     avg_prices_dataframe.set_index('type_id', inplace=True)
     #print(str(avg_prices_dataframe))
     return avg_prices_dataframe
+
+def update_metadata(prices=False, blueprints=False, expired_contracts=False):
+    current_timestamp = datetime.now()
+    if prices:
+        redis_key = 'price_cache_updated'
+    if blueprints:
+        redis_key = 'blueprint_values_updated'
+    if expired_contracts:
+        redis_key = 'expired_contracts_checked'
+    redis_client = redis_connection()
+    redis_client.set(redis_key, pickle.dumps(current_timestamp)) # Cache the data in Redis
+    print(f"Status updated to redis cache")
+
+
+def check_metadata(data_type):
+    redis_client = redis_connection()
+    current_timestamp = datetime.now()
+    try:
+        if data_type == 'prices':
+            cached_data = pickle.loads(redis_client.get('price_cache_updated'))
+        if data_type == 'blueprints':
+            cached_data = pickle.loads(redis_client.get('blueprint_values_updated'))
+        if data_type == 'expired_contracts':
+            cached_data = pickle.loads(redis_client.get('expired_contracts_checked'))
+        time_since = current_timestamp - cached_data
+        return time_since
+    except TypeError:
+        print(f'No timestamp entry found for last {data_type} update')
+
+def update_caches():
+    load_dotenv()
+    sso_file = os.getenv("default_character_session_file")
+    time_since_prices = check_metadata('prices')
+    if time_since_prices > timedelta(hours=2):
+        print("it's time to update prices!")
+        sso_session = temp_test_oauth_session(sso_file)
+        locations = ['Jita', 'Amarr', '1DQ1-A']
+        types = ['buy', 'sell']
+
+        for location in locations:
+            for order_type in types:
+                print(f"Location: {location}, Type: {order_type}")
+                get_all_orders(location, order_type, False, sso_session)
+        get_average_prices()
+        update_metadata(prices=True)
+    else:
+        print(f"it's been {time_since_prices} since prices were updated")
+
+    time_since_blueprints = check_metadata('blueprints')
+    if time_since_blueprints > timedelta(hours=24):
+        print("it's time to update blueprints!")
+        update_contract_values()
+        update_metadata(blueprints=True)
+    else:
+        print(f"it's been {time_since_blueprints} since blueprint values were updated")
+
+# This is here because I got stuck in circular imports 😭
+def update_contract_values():
+    prices_dataframe_sell = get_prices_from_station('Jita','sell', True)
+    prices_dataframe_buy = get_prices_from_station('Jita','buy', True)
+
+    engine = db_connection()
+    engine_fuzz = db_connection(fuzz=True)
+
+    blueprint_materials_query = "SELECT typeID, activityID, materialTypeID, quantity FROM industryActivityMaterials;"
+    blueprint_materials_df = pd.read_sql_query(blueprint_materials_query, con=engine_fuzz)
+    blueprint_materials_df = blueprint_materials_df[blueprint_materials_df['activityID']== 1 ] # Only manufacturing jobs
+    #blueprint_materials_df = blueprint_materials_df.rename(columns={'typeID':'type_id','activityID':'activity_id'})
+
+    merged_materials_df = blueprint_materials_df.merge(prices_dataframe_sell, left_on='materialTypeID', right_index=True) # use minsell price for input materials
+    merged_materials_df['material_price'] = merged_materials_df['quantity'] * merged_materials_df['price']
+
+    print(merged_materials_df)
+
+    grouped_materials_df = merged_materials_df.groupby('typeID')['material_price'].sum().reset_index()
+    print(grouped_materials_df)
+    #print(grouped_materials_df[grouped_materials_df['typeID'] == 41638])
+    print("---products---")
+    blueprint_products_query = "SELECT typeID, activityID, productTypeID, quantity FROM industryActivityProducts;"
+    blueprint_products_df = pd.read_sql_query(blueprint_products_query, con=engine_fuzz)
+    blueprint_products_df = blueprint_products_df[blueprint_products_df['activityID']== 1 ] # Only manufacturing jobs
+
+    merged_products_df = blueprint_products_df.merge(prices_dataframe_buy, left_on='productTypeID', right_index=True) # max jita buy price for outputs
+    merged_products_df['product_price'] = merged_products_df['quantity'] * merged_products_df['price']
+    print("merged_products_df:\n",merged_products_df)
+    grouped_products_df = merged_products_df.groupby('typeID')['product_price'].sum().reset_index()
+    print("grouped_products_df:\n",grouped_products_df)
+    #print(grouped_products_df[grouped_products_df['typeID'] == 41638])
+
+    blueprint_values_df = grouped_products_df.merge(grouped_materials_df, left_on='typeID',right_on='typeID')
+    print("\nblueprint_values_df before merging productTypeID:\n", blueprint_values_df)
+    blueprint_values_df = blueprint_values_df.merge(blueprint_products_df[['typeID', 'productTypeID']], on='typeID')
+    print("\nblueprint_values_df after merging productTypeID:\n", blueprint_values_df)
+    blueprint_values_df = blueprint_values_df.rename(columns={'typeID':'blueprint_type_id','productTypeID':'product_type_id'})
+    blueprint_values_df['blueprint_type_name'] = blueprint_values_df['blueprint_type_id'].map(get_item_names())
+    blueprint_values_df = blueprint_values_df.reindex(columns=['blueprint_type_id', 'blueprint_type_name', 'material_price', 'product_type_id', 'product_price'])
+    blueprint_values_df.set_index('blueprint_type_id', inplace=True)
+    blueprint_values_df['blueprint_profit'] = blueprint_values_df['product_price'] - blueprint_values_df['material_price']
+    blueprint_values_df['profit_margin'] = blueprint_values_df['blueprint_profit'] / blueprint_values_df['material_price']
+
+    blueprint_values_df.loc[blueprint_values_df['blueprint_profit'] <= 0 , 'blueprint_profit'] = 0
+
+
+    print("\nfinally, blueprint_values_df:\n", blueprint_values_df)
+
+    try:
+        blueprint_values_df.to_sql('blueprint_values', con=engine, if_exists='replace')
+        print("Blueprint values dataframe saved to database.")
+        logging.info(f"Blueprint values dataframe saved to database.")
+    except Exception as e:
+        print(e)
+        print(f"Error saving blueprint values to database. Aborting.")
+        logging.error(f"Error saving blueprint values to database. Aborting. \n{e}")

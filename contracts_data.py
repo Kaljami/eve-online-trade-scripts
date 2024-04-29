@@ -7,7 +7,7 @@ import nest_asyncio
 from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.price_differences import get_prices_from_station
-from data_retrieval.order_data import get_average_prices
+from data_retrieval.order_data import get_average_prices, update_caches
 from data_processing.types_in_group import get_rig_type_ids
 from data_processing.sde_utils import get_item_names
 from datetime import datetime, timezone
@@ -32,11 +32,6 @@ db_password = os.getenv("mysql_password")
 db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
 
-""" db_user = os.getenv("stats_mysql_user")
-db_password = os.getenv("stats_mysql_password")
-db_host = os.getenv("stats_mysql_host")
-db_database = os.getenv("stats_mysql_database")
- """
 # Contracts: 
 regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
 minimum_profit_percentage = 15
@@ -460,6 +455,7 @@ async def really_send_embed():
 async def main():
     await really_send_embed()
 
+update_caches()
 packaged_volumes_dataframe = load_packaged_volumes()
 rig_type_ids = get_rig_type_ids()
 blueprint_values_df = get_blueprint_profits()

@@ -5,28 +5,33 @@ import yaml
 import json
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
+import logging
+logging.basicConfig(filename='logs/general.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-## These functions work for accessing static data from the SDE, which was imported by data_retrieval/static_data_import.py
+## These functions work for accessing and manipulating static data from the SDE, which was imported by data_retrieval/static_data_import.py
 
-def db_connection():
+def db_connection(fuzz=False):
     load_dotenv()
     db_user = os.getenv("mysql_user")
     db_password = os.getenv("mysql_password")
     db_host = os.getenv("mysql_host")
-    db_database = os.getenv("mysql_database_fuzzworks")
+    if fuzz:
+        db_database = os.getenv("mysql_database_fuzzworks")
+    else:
+        db_database = os.getenv("mysql_database")
     engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
     return engine
 
 def get_item_names():
     query = f'SELECT typeID, typeName FROM invTypes WHERE published = 1;'
-    engine = db_connection()
+    engine = db_connection(fuzz=True)
     df = pd.read_sql_query(query, con=engine)
     dict_df = df.set_index('typeID').to_dict()['typeName']
     return dict_df
 
 def get_type_ids():
     query = f'SELECT typeName, typeID FROM invTypes WHERE published = 1;'
-    engine = db_connection()
+    engine = db_connection(fuzz=True)
     df = pd.read_sql_query(query, con=engine)
     dict_df = df.set_index('typeName').to_dict()['typeID']
     return dict_df
@@ -73,3 +78,4 @@ def generate_packaged_volumes():
     print(dictionary)
     with open("static/types_packaged_volumes.json", 'w') as file:
         json.dump(dictionary, file)
+
