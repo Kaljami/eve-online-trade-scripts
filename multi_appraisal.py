@@ -4,6 +4,8 @@ from io import StringIO
 from data_processing.sde_utils import get_item_names
 from data_retrieval.price_differences import get_prices_from_station
 import numpy as np
+import locale
+locale.setlocale(locale.LC_ALL, '')
 
 pd.set_option('display.float_format', lambda x: '%.2f' % x)
 
@@ -61,7 +63,8 @@ def prettify_num(number):
     return pretty_num
 
 def format_number(value):
-    return "{:,.2f}".format(value)
+    return "{:,.0f}".format(value)
+    #return "{0:n}".format(value) # lol what scientific notation no thx 
     #return value
 app.jinja_env.filters['format_number'] = format_number
 
@@ -157,9 +160,15 @@ def process_data():
     for value in location_totals:
         if isNaN(location_totals[value])==True:
             if user_wants_to == 'buy':
-                location_totals[value] = 'Everything not available'
-            elif user_wants_to == 'sell':
-                location_totals[value] = 'No existing sell orders for everything'
+                if order_type == 'sell': 
+                    location_totals[value] = 'Everything not available' 
+                if order_type == 'buy:':
+                    location_totals[value] = 'No existing buy orders for everything' # if user wants to buy using buy orders, no existin orders isn't an issue but the data was already nan so 🤷
+            if user_wants_to == 'sell':
+                if order_type == 'sell':
+                    location_totals[value] = 'No existing sell orders for everything' 
+                if order_type == 'buy:':
+                    location_totals[value] = 'No existing buy orders for everything' # also not an issue
         else:
             location_totals[value] = f"{prettify_num(location_totals[value])} ISK"
 
@@ -172,7 +181,9 @@ def process_data():
         total_jita=location_totals['jita'], 
         total_amarr=location_totals['amarr'],
         total_delve=location_totals['delve'],
-        result=output_df
+        result=output_df,
+        order_type = order_type,
+        price_type = 'lowest' if user_wants_to =='buy' else 'highest'
         )
 
 if __name__ == '__main__':
