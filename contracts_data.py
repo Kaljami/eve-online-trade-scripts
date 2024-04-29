@@ -32,6 +32,11 @@ db_password = os.getenv("mysql_password")
 db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
 
+""" db_user = os.getenv("stats_mysql_user")
+db_password = os.getenv("stats_mysql_password")
+db_host = os.getenv("stats_mysql_host")
+db_database = os.getenv("stats_mysql_database")
+ """
 # Contracts: 
 regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
 minimum_profit_percentage = 15
@@ -268,7 +273,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     merged_items_df = items_df.merge(prices_dataframe_average, left_on='type_id', right_index=True, how='left', suffixes=('', '_avg')) # BPO's always use average price
 
     #merged_items_df.loc[merged_items_df['type_id'].isin(all_blueprint_type_ids), 'price'] = prices_dataframe_sell.loc[29086,'price']
-    merged_items_df['type_name'] = merged_items_df['type_id'].map(get_item_names())
+    merged_items_df['type_name'] = merged_items_df['type_id'].map(type_names)
     
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
@@ -420,11 +425,12 @@ async def really_send_embed():
         packaged_volume = row['packaged_volume']
         top_item_name = row['top_item_name']
 
-        for pattern in ignore_list:
-            if fnmatch.fnmatch(row['topt_item_name'], pattern):
-                break
-        else:
-            continue
+        if top_item_name is not None:
+            for pattern in ignore_list:
+                if fnmatch.fnmatch(row['top_item_name'], pattern):
+                    print(f'Not notifying for an item on ignore list: {pattern}')
+                    logging.info(f'Not notifying for an item on ignore list: {pattern}')
+                    break
 
         # Calculations
         discount = 1 - price/jita_buy_value
@@ -457,6 +463,7 @@ async def main():
 packaged_volumes_dataframe = load_packaged_volumes()
 rig_type_ids = get_rig_type_ids()
 blueprint_values_df = get_blueprint_profits()
+type_names = get_item_names()
 
 prices_dataframe_sell = get_market_prices("Jita", 'sell', use_cached_prices)
 #print(prices_dataframe_sell)

@@ -29,7 +29,6 @@ def get_type_ids():
     engine = db_connection()
     df = pd.read_sql_query(query, con=engine)
     dict_df = df.set_index('typeName').to_dict()['typeID']
-    
     return dict_df
 
 def get_item_sizes():
