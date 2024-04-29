@@ -2,7 +2,7 @@ from flask import Flask, render_template, request
 import pandas as pd
 from io import StringIO
 from data_processing.sde_utils import get_item_names
-from data_retrieval.price_differences import get_prices_from_station
+from data_retrieval.order_data import get_prices_from_station
 
 app = Flask(__name__)
 

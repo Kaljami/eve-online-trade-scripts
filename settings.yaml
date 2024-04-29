@@ -5,7 +5,7 @@ source_hub: 'Jita'
 source_order_type: 'sell'
 
 dest_hub: '1DQ1-A'
-dest_order_type: 'sell'
+dest_order_type: 'buy'
 
 days_history: '7'
 bogus_threshold: '10'

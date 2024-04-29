@@ -17,12 +17,15 @@ def render_to_html(summary):
     summary = summary[[
         'typeID', 'Total Profit', 'Source price',
         'Destination price', 'Profit', 'Margin',
-        'Daily Volume', 'Haul Size', 'Units available', 'Average Price', 'ISK p m3'
+        'Daily Volume', 'Haul Size', 
+        'Units on buy orders', 'Mean Buy Price', 
+        'Units available', 'Mean Sell Price', 
+        'ISK p m3'
     ]]
 
     # Output to HTML table
     with open(url, 'w+') as fp:
-        fp.write('<link rel="stylesheet" href="style.css">')
+        fp.write('<link rel="stylesheet" href="static/style.css">')
         fp.write(summary.to_html(
             formatters=formatters,
             bold_rows=False,

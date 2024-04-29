@@ -1,12 +1,13 @@
 import pandas as pd
 
 import data_retrieval.order_data as order_data
+from data_retrieval.order_data import get_prices_from_station
 import data_retrieval.historical_data as historical_data
-import data_retrieval.order_import as order_import
 import data_processing.render as render
 from data_processing.sde_utils import get_item_names, get_item_sizes
 import os
-from data_retrieval.price_differences import get_prices_from_station, get_ungrouped_prices_from_station, get_volume_price_history
+
+from data_retrieval.price_differences import get_ungrouped_prices_from_station, get_volume_price_history
 
 
 
@@ -98,15 +99,6 @@ def price_differences(settings):
 
     # Clean up by dropping NAN rows - Usually this means no volume data or no sell-side orders.
     summary = summary.dropna()
-
-    # Find out which items are already being traded by the player
-    player_orders_df = pd.read_csv(order_import.get_player_orders_file())
-    player_orders_set = set(player_orders_df['typeID'])
-    summary['Already Selling'] = summary.index.isin(player_orders_set)
-
-    if settings.hide_existing:
-        summary = summary[~summary['Already Selling']]
-        summary = summary.drop('Already Selling', axis=1)
 
     # Calculate item volume required to fulfil daily sale volume
     summary['Haul Size'] = summary['Units available'] * summary.index.map(typeIDs_to_sizes)

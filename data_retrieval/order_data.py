@@ -103,7 +103,7 @@ async def get_page(session, region_id, page, order_type):
 
 def citadel_get_all_orders(station_id, pages, order_type, sso_session):
     orders = []
-    for page in tqdm(range(1, pages + 1), desc='Loading pageful of orders', unit="pages", total=pages):
+    for page in tqdm(range(1, pages + 1), desc='Loading orders', unit="pages", total=pages):
         page_orders = citadel_get_page(station_id, page, order_type, sso_session)
         orders.extend(page_orders)
     return orders
@@ -238,11 +238,11 @@ def check_metadata(data_type):
     except TypeError:
         print(f'No timestamp entry found for last {data_type} update')
 
-def update_caches():
+def update_caches(force=False):
     load_dotenv()
     sso_file = os.getenv("default_character_session_file")
     time_since_prices = check_metadata('prices')
-    if time_since_prices > timedelta(hours=2):
+    if time_since_prices > timedelta(hours=2) or force == True:
         print("it's time to update prices!")
         sso_session = temp_test_oauth_session(sso_file)
         locations = ['Jita', 'Amarr', '1DQ1-A']
@@ -252,13 +252,13 @@ def update_caches():
             for order_type in types:
                 print(f"Location: {location}, Type: {order_type}")
                 get_all_orders(location, order_type, False, sso_session)
-        get_average_prices()
+        get_average_prices(False)
         update_metadata(prices=True)
     else:
         print(f"it's been {time_since_prices} since prices were updated")
 
     time_since_blueprints = check_metadata('blueprints')
-    if time_since_blueprints > timedelta(hours=24):
+    if time_since_blueprints > timedelta(hours=24) or force == True:
         print("it's time to update blueprints!")
         update_contract_values()
         update_metadata(blueprints=True)

@@ -5,9 +5,14 @@ import data_retrieval.historical_data as historical_data
 import data_processing.render as render
 from data_processing.sde_utils import get_item_names, get_item_sizes
 import os
+from datetime import timedelta
+pd.set_option('display.float_format', lambda x: '%.2f' % x) # disable scientific notation for floats in the dataframes
 
 def get_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
     # Get orders as JSON
+    time_since = order_data.check_metadata('prices')
+    if time_since < timedelta(minutes=30):
+        cached = True
     print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
     orders_json = order_data.get_all_orders(station_name, order_type, cached, sso_session)
     #print ("get_prices_from_station says: orders_json:",str(orders_json))
@@ -24,6 +29,9 @@ def get_prices_from_station(station_name, order_type, cached, sso_session=None) 
     
 def get_ungrouped_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
     # Get orders as JSON. Keep all the orders instead of only the best price available. 
+    time_since = order_data.check_metadata('prices')
+    if time_since < timedelta(minutes=30):
+        cached = True
     print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
     orders_json = order_data.get_all_orders(station_name, order_type, cached, sso_session) #this could as well be always cached 
     print(f'Got {len(orders_json)} orders!')
@@ -53,7 +61,9 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
     }
 
     historical_df = pd.concat(typeID_history_dict, axis=1).T
-    historical_df = historical_df.drop('date', axis='columns')
+    print(historical_df)
+    if 'date' in historical_df.columns:
+        historical_df = historical_df.drop('date', axis='columns')
     historical_df.columns = pd.to_datetime(historical_df.columns, yearfirst=True)
     print('Done!')
 
@@ -110,7 +120,12 @@ def price_differences(settings, sso_session):
 
     # Availability calculations
     # Calculate the maximum source price that allows for the specified margin
-    summary['max_source_price'] = summary['Destination price'] / (1 + minimum_margin)
+    if settings.dest_order_type == 'sell':
+        summary['max_source_price'] = summary['Destination price'] / (1 + minimum_margin)
+    if settings.dest_order_type == 'buy':
+        summary['max_source_price'] = summary['Destination price'] / (1 + minimum_margin/2)
+        summary['min_dest_price'] = summary['Source price'] * (1 + minimum_margin/2) # No clue if this is at all correct. Idea is to split the profit margin to be flexible on both ends
+    
 
     # Merge max prices from summary to ungrouped 
     ungrouped_max_source_prices = ungrouped_source_prices.merge(summary[['max_source_price']], how='left', on='type_id')
@@ -118,8 +133,6 @@ def price_differences(settings, sso_session):
     print(str(ungrouped_max_source_prices))
     os.makedirs('exports', exist_ok=True)
     ungrouped_max_source_prices.to_csv('exports/ungrouped_max_source_prices.csv')  
-
-
     # Remove rows where the price is higher than the max_source_price
     filtered_source_prices = ungrouped_max_source_prices[ungrouped_max_source_prices['price'] <= ungrouped_max_source_prices['max_source_price']]
     print("filtered_source_prices")
@@ -133,9 +146,30 @@ def price_differences(settings, sso_session):
     # Save the total volume_remaining for each type_id
     summary['Units available'] = grouped_source_prices['volume_remain']
     # Save the average price for each type_id
-    summary['Average Price'] = grouped_source_prices['price']
+    summary['Mean Sell Price'] = grouped_source_prices['price']
     # Remove rows below margin treshold
     summary = summary[summary['Margin'] >= minimum_margin]
+
+    # Merge min prices from summary to ungrouped 
+    ungrouped_min_dest_prices = ungrouped_dest_prices.merge(summary[['min_dest_price']], how='left', on='type_id')
+    print("ungrouped_min_dest_prices")
+    print(str(ungrouped_min_dest_prices))
+    ungrouped_min_dest_prices.to_csv('exports/ungrouped_min_dest_prices.csv')  
+    # Remove rows where the price is lower than preferred
+    filtered_dest_prices = ungrouped_min_dest_prices[ungrouped_min_dest_prices['price'] >= ungrouped_min_dest_prices['min_dest_price']]
+    print("filtered_dest_prices")
+    print(str(filtered_dest_prices))
+    filtered_dest_prices.to_csv('exports/filtered_dest_prices.csv')  
+    # Group the remaining rows by type_id
+    grouped_dest_prices = filtered_dest_prices.groupby('type_id').agg({'price':'mean','min_dest_price':'first','volume_remain':'sum'})
+    print("grouped_dest_prices")
+    print(str(grouped_dest_prices))
+    grouped_dest_prices.to_csv('exports/grouped_dest_prices.csv')
+    # Save the total volume_remaining for each type_id
+    summary['Units on buy orders'] = grouped_dest_prices['volume_remain']
+    # Save the average price for each type_id
+    summary['Mean Buy Price'] = grouped_dest_prices['price']
+
 
     # Print summary DataFrame to check values
     print("summary:")
@@ -149,8 +183,10 @@ def price_differences(settings, sso_session):
     summary = summary[(summary['Destination price'] / price) < float(settings.bogus_threshold)]
 
     # Finally, calculate expected profit per item by multiplying unit profit by mean daily volume or number of available units, whichever is lower
-    summary['Total Profit'] = summary['Profit'] * summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1)
-
+    if settings.dest_order_type == 'sell':
+        summary['Total Profit'] = summary['Profit'] * summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1)
+    if settings.dest_order_type == 'buy':
+         summary['Total Profit'] = summary['Profit'] * summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1) # TODO get amount of units on buy orders 
     # Clean up by dropping NAN rows - Usually this means no volume data or no sell-side orders.
     summary = summary.dropna()
 
