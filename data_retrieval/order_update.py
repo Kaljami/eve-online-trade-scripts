@@ -3,7 +3,6 @@ from pynput import keyboard
 import pyperclip
 import requests
 
-import data_retrieval.order_import as order_import
 from data_retrieval.price_differences import get_prices_from_station
 from data_retrieval.sso_utils import get_character_location
 

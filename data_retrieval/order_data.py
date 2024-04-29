@@ -1,12 +1,30 @@
 import os
 import pickle
-
 import aiohttp
 import asyncio
 import requests
 import pandas as pd
 import json
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+import redis
+from tqdm import tqdm
 
+def db_connection(): # At the moment not used because of poor performance compared to redis
+    load_dotenv()
+    db_user = os.getenv("mysql_user")
+    db_password = os.getenv("mysql_password")
+    db_host = os.getenv("mysql_host")
+    db_database = os.getenv("mysql_database")
+
+    engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
+    return engine
+
+def redis_connection():
+    load_dotenv()
+    redis_host = os.getenv("redis_host")
+    redis_client = redis.Redis(host=redis_host, port=6379, db=0)
+    return redis_client
 
 def get_num_pages(region_id, order_type, sso_session):
     params = {'order_type': order_type}
@@ -49,7 +67,7 @@ async def get_page(session, region_id, page, order_type):
 
 def citadel_get_all_orders(station_id, pages, order_type, sso_session):
     orders = []
-    for page in range(1, pages + 1):
+    for page in tqdm(range(1, pages + 1), desc='Loading pageful of orders', unit="pages", total=pages):
         page_orders = citadel_get_page(station_id, page, order_type, sso_session)
         orders.extend(page_orders)
     return orders
@@ -66,14 +84,11 @@ async def async_get_all_orders(region_id, pages, order_type):
 
 def get_all_orders(system_name, order_type, cached, sso_session):
     if cached == True:
-        print (f"Getting {system_name} {order_type} orders from cached data")
         return get_orders_from_cache(system_name, order_type)
-    all_orders = get_all_orders_concurrent(system_name, order_type, sso_session)
-    save_orders_to_cache(system_name, all_orders, order_type)
-    out_file = open(f"exports/debug_{system_name}.json", "w") 
-    json.dump(all_orders, out_file, indent = 6) 
-    out_file.close() 
-    return all_orders
+    else:
+        all_orders = get_all_orders_concurrent(system_name, order_type, sso_session)
+        save_orders_to_cache(system_name, all_orders, order_type)
+        return all_orders
 
 
 
@@ -88,7 +103,7 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
 
     pages = get_num_pages(region_id, order_type, sso_session)
     if region_id == 10000060:
-        all_orders = citadel_get_all_orders(station_id, pages, order_type, sso_session)
+        all_orders = citadel_get_all_orders(station_id, pages, order_type, sso_session) # If looking for orders in player-owned structures we need an SSO login with access to the structure
         if order_type == "sell":
             sell_orders = [order for order in all_orders if not order["is_buy_order"]]
             return sell_orders
@@ -111,15 +126,33 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
             print (e)
 
 
+def save_orders_to_cache(system_name, orders, order_type): # Save to redis, and pickle for redundancy
+    cache_key = f'orders_{system_name}_{order_type}'
+    try:
+        print(f"Saving {system_name} {order_type} orders to redis cache")
+        redis_client = redis_connection()
+        
+        redis_client.set(cache_key, pickle.dumps(orders)) # Cache the data in Redis
+        with open(os.path.join('cache', f'{cache_key}.pkl'), 'wb') as fp:
+            pickle.dump(orders, fp)
+    except Exception as e:
+        print("error while saving cache to redis:", e, "Saving only as pickle")
+        pickle_file = cache_key
+        with open(os.path.join('cache', f'{pickle_file}.pkl'), 'wb') as fp:
+            pickle.dump(orders, fp)
+
 def get_orders_from_cache(system_name, order_type):
-   cache_file = os.path.join('cache', f'{system_name}_orders_{order_type}.pkl')
-   with open(cache_file, 'rb') as fp:
-       return pickle.load(fp)
-
-
-def save_orders_to_cache(system_name, orders, order_type):
-    with open(os.path.join('cache', f'{system_name}_orders_{order_type}.pkl'), 'wb') as fp:
-        pickle.dump(orders, fp)
+    redis_client = redis_connection()
+    cache_key = f'orders_{system_name}_{order_type}'
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        print (f"Getting {system_name} {order_type} orders from redis cache")
+        return pickle.loads(cached_data)
+    else:
+        print (f"That failed. Getting {system_name} {order_type} orders from local pickle file as last resort")
+        cache_file = os.path.join('cache', f'{system_name}_orders_{order_type}.pkl')
+        with open(cache_file, 'rb') as fp:
+            return pickle.load(fp)
 
 
 def get_average_prices(cached):

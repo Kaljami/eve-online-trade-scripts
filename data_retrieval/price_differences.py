@@ -2,7 +2,6 @@ import pandas as pd
 
 import data_retrieval.order_data as order_data
 import data_retrieval.historical_data as historical_data
-import data_retrieval.order_import as order_import
 import data_processing.render as render
 from data_processing.sde_utils import get_item_names, get_item_sizes
 import os

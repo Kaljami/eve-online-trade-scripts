@@ -16,3 +16,4 @@ discord
 asyncio
 nest_asyncio
 tqdm
+redis

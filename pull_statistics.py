@@ -13,7 +13,7 @@ import mysql.connector
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-logging.basicConfig(filename='logs/pull_statistics.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='logs/pull_statistics.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
 
 ### Setting begin
@@ -24,10 +24,10 @@ influxdb_database = os.getenv("influxdb_database")
 influxdb_username = os.getenv("influxdb_username")
 influxdb_password = os.getenv("influxdb_password")
 
-mysql_user = os.getenv("mysql_user")
-mysql_password = os.getenv("mysql_password")
-mysql_host = os.getenv("mysql_host")
-mysql_database = os.getenv("mysql_database")
+mysql_user = os.getenv("stats_mysql_user")
+mysql_password = os.getenv("stats_mysql_password")
+mysql_host = os.getenv("stats_mysql_host")
+mysql_database = os.getenv("stats_mysql_database")
 
 ### Settings end
 
@@ -69,7 +69,7 @@ def get_character_orders():
         #print(str(buy_orders_f))
         return sell_order_total_value, buy_order_total_value
     else:
-        print ("no market orders found")
+        print ("No character market orders found")
         return 0,0
 
     
@@ -329,10 +329,17 @@ def get_character_journal():
     #journal_dataframe.to_sql('journal', con=engine, if_exists='append', index=False)
     existing_entries_query = "SELECT id FROM journal"
     existing_entries = pd.read_sql(existing_entries_query, con=engine)
-    #journal_dataframe.drop_duplicates(subset='id', keep='first', inplace=True)
+    journal_dataframe.drop_duplicates(subset='id', keep='first', inplace=True) # might be needed for "ref_type": "bounty_surcharge" since it has duplicate ID. 
     new_entries = journal_dataframe[~journal_dataframe['id'].isin(existing_entries['id'])]
-    new_entries.to_sql('journal', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
-    print(f"Wallet journal for {character_name} saved in MySQL")
+    try:
+        new_entries.to_sql('journal', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
+        print(f"Wallet journal for {character_name} saved in MySQL")
+    except Exception as e:
+        print(f"Unable to save wallet journal for {character_name} in MySQL. CSV dump saved as exports/debug_journal.csv. Error:")
+        print(e)
+        new_entries.to_csv('exports/debug_journal.csv')
+        logging.error(f"Unable to save wallet journal for {character_name} in MySQL. CSV dump saved as exports/debug_journal.csv. Error: {e}")
+
 
 def get_character_transactions():
     from datetime import datetime
