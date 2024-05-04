@@ -151,8 +151,8 @@ def process_data():
     # sum of prices
     location_totals = {
         'best':output_df['best_price'].sum(skipna=False),
-        'amarr':output_df['t_price_jita'].sum(skipna=False),
-        'jita':output_df['t_price_amarr'].sum(skipna=False),
+        'amarr':output_df['t_price_amarr'].sum(skipna=False),
+        'jita':output_df['t_price_jita'].sum(skipna=False),
         'delve':output_df['t_price_delve'].sum(skipna=False)
         }
     

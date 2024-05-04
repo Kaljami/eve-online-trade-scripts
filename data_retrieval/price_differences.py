@@ -184,9 +184,11 @@ def price_differences(settings, sso_session):
 
     # Finally, calculate expected profit per item by multiplying unit profit by mean daily volume or number of available units, whichever is lower
     if settings.dest_order_type == 'sell':
-        summary['Total Profit'] = summary['Profit'] * summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1)
+        summary['Units to sell'] = summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1)
+        summary['Total Profit'] = summary['Profit'] * summary['Units to sell']
     if settings.dest_order_type == 'buy':
-         summary['Total Profit'] = summary['Profit'] * summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1) # TODO get amount of units on buy orders 
+        summary['Units to sell'] = summary.apply(lambda row: min(row['Units available'], row['Units on buy orders']), axis=1)
+        summary['Total Profit'] = summary['Profit'] * summary['Units to sell']
     # Clean up by dropping NAN rows - Usually this means no volume data or no sell-side orders.
     summary = summary.dropna()
 
@@ -201,7 +203,7 @@ def price_differences(settings, sso_session):
         summary = summary.drop('Already Selling', axis=1)
     """
     # Calculate item volume required to fulfil daily sale volume
-    summary['Haul Size'] = summary['Units available'] * summary.index.map(typeIDs_to_sizes)
+    summary['Haul Size'] = summary['Units to sell'] * summary.index.map(typeIDs_to_sizes)
 
     # Profit per item size
     summary['ISK p m3'] = summary['Profit'] / summary.index.map(typeIDs_to_sizes)

@@ -13,7 +13,6 @@ from datetime import datetime, timezone, timedelta
 from data_retrieval.sso_utils import temp_test_oauth_session
 from data_processing.sde_utils import get_item_names
 import logging
-logging.basicConfig(filename='logs/general.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def db_connection(fuzz=False):

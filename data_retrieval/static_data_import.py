@@ -23,7 +23,9 @@ url_list = [
     'https://www.fuzzwork.co.uk/dump/latest/industryBlueprints.sql.bz2', # type id's and maximum runs
     'https://www.fuzzwork.co.uk/dump/latest/invCategories.sql.bz2', # pretty self explanatory, category, group and market group id's for type_id's
     'https://www.fuzzwork.co.uk/dump/latest/invGroups.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/invMarketGroups.sql.bz2'
+    'https://www.fuzzwork.co.uk/dump/latest/invMarketGroups.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/mapSolarSystems.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/mapRegions.sql.bz2'
     ]
 
 def import_sql_dump(dump_file):
@@ -49,10 +51,10 @@ def import_sql_dump(dump_file):
         for command in parsed_commands:
             command = command.strip()  # Remove leading/trailing whitespace
             if command:
-                print("Executing SQL command:", command)
+                #print("Executing SQL command:", command)
                 cursor.execute(command)
         connection.commit()
-        print("All SQL commands executed successfully.")
+        print(f"All SQL commands from {dump_file} executed successfully.")
     except Exception as e:
         print("Error executing SQL commands:", e)
         connection.rollback()
