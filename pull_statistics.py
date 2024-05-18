@@ -11,7 +11,7 @@ import logging
 import time
 import mysql.connector
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, exc
 
 logging.basicConfig(filename='logs/pull_statistics.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
@@ -365,6 +365,63 @@ def get_character_transactions():
     else: 
         print(f"No market transactions found for {character_name}")
 
+def get_character_contracts():
+    character_contracts_data = sso_session.get(f'https://esi.evetech.net/latest/characters/{character_id}/contracts/').json()
+    #print(character_contracts_data)
+    if character_contracts_data:
+        character_contracts = pd.DataFrame(character_contracts_data)
+
+       # Here "all" means all contracts created by this character
+        all_contracts = character_contracts[character_contracts['issuer_id'] == character_id] 
+        all_contracts.set_index('contract_id', inplace=True)
+
+        ### set one as finished for testing
+        all_contracts.at[203677843, 'status'] = 'finished'
+        ### 
+        
+        try: # check if character_contracts exist:
+            existing_entries_query = f"SELECT * FROM character_contracts WHERE issuer_id = {character_id}"
+            existing_entries = pd.read_sql(existing_entries_query, con=engine)
+            existing_entries.set_index('contract_id', inplace=True)
+
+            # Find rows where the status is not equal in these dataframes
+            comparison_mask = all_contracts['status'].loc[existing_entries.index] != existing_entries['status']
+            unequal_rows = comparison_mask[comparison_mask].index
+            recently_finished = all_contracts.loc[unequal_rows]
+
+            # Send messages for contracts that have now finished
+            for index, row in recently_finished.iterrows():
+                status = row['status']
+                contract_id = index
+                price = row['price']
+                if status == 'finished':
+                    print(f"{character_name}'s contract {contract_id} has finished! We got {prettify_num(price)} ISK for it.")
+                else: 
+                    print(f'Contract id {contract_id} status has changed to {status}')
+
+            new_entries = all_contracts[~all_contracts.index.isin(existing_entries.index)]
+            new_entries.to_sql('character_contracts', con=engine, if_exists='append', index=True, method='multi', chunksize=1000)
+
+
+        except exc.ProgrammingError as e:
+            logging.error(f'Error while saving character contracts: {e}')
+            logging.debug('Created a new table character_contracts in mysql')
+            all_contracts.to_sql('character_contracts', con=engine, if_exists='replace', index=True, method='multi', chunksize=1000)
+        print(f"Contracts from {character_name} saved in MySQL")
+
+
+
+        # for outstanding value, only get ones where status is 'outstanding'
+        outstanding_contracts = character_contracts[character_contracts['status'] == 'outstanding']
+        #print (outstanding_contracts)
+        total_sum = outstanding_contracts['price'].sum()
+        print(f"Total outstanding contract value: {total_sum}")
+        n_outstanding_contracts = len(outstanding_contracts)
+        print(f"Number of outstanding contracts: {n_outstanding_contracts}")
+        return total_sum, n_outstanding_contracts
+    else:
+        print ("no character contracts found")
+        return 0, 0
 
 def get_jita_prices(cached):
     prices_dataframe = pd.DataFrame()
@@ -383,7 +440,7 @@ def get_average_prices():
     #print(str(avg_prices_dataframe))
     return avg_prices_dataframe
 
-def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value):
+def create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value, character_contract_value, character_contract_amount):
     data = {#'character_id': [character_id], 
             #'character_name': [character_name], 
             'character_wallet_balance': [character_wallet_balance], 
@@ -394,6 +451,8 @@ def create_summary_dataframe(character_id, character_name, character_wallet_bala
             'character_implants': [float(character_implants)],
             'corporation_asset_value': [int(corporation_asset_value)],
             'corporation_industry_value': [int(corporation_industry_value)],
+            'character_contract_value': [int(character_contract_value)],
+            'character_contract_amount': [int(character_contract_amount)],
             }
     summary_dataframe = pd.DataFrame(data)
     #print(str(summary_dataframe))
@@ -425,7 +484,9 @@ def write_to_influxdb_v1(df, measurement, tags, time_column='time'):
 
     print("Data successfully written to InfluxDB.")
 
-
+def prettify_num(number):
+    pretty_num = f'{int(number):,}' # remove decimals to make ints pretty
+    return pretty_num
 
 def rotate_all_sessions():
     sessions_directory_stats = 'sessions_stats'
@@ -457,16 +518,17 @@ def rotate_all_sessions():
         get_character_mining()
         get_character_journal()
         get_character_transactions()
+        character_contract_value, character_contract_amount = get_character_contracts()
         if character_id == corporation_ceo_id:
             logging.debug(f"{character_name} is CEO of corporation ID {corporation_id}. Getting corporation data.")
             corporation_asset_value = get_corporation_assets(avg_prices_dataframe)
             corporation_industry_value = get_corporation_industry_jobs(prices_dataframe)
-            df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value)
+            df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value, character_contract_value, character_contract_amount)
             write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name, 'corporation_name': corporation_name})
         else: 
             corporation_asset_value = 0
             corporation_industry_value = 0
-            df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value)
+            df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value, character_contract_value, character_contract_amount)
             write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
 rotate_all_sessions()

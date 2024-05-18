@@ -27,6 +27,7 @@ def get_best_prices(order_type):
     jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
     amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
     delve_sell_df = get_market_prices('1DQ1-A', order_type, locations_cached)
+    # TODO add dodixie and selection for locations
     print("Calculating best prices...")
     # List of DataFrames
     sell_dfs = [jita_sell_df, amarr_sell_df, delve_sell_df]
