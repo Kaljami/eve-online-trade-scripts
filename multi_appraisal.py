@@ -5,12 +5,47 @@ from data_processing.sde_utils import get_item_names
 from data_retrieval.order_data import get_prices_from_station
 import numpy as np
 import locale
+import redis
+from dotenv import load_dotenv
+import os
+import pickle
 locale.setlocale(locale.LC_ALL, '')
 
 pd.set_option('display.float_format', lambda x: '%.2f' % x)
 
 app = Flask(__name__, template_folder='./render', static_folder='./render/static', )
 
+def redis_connection():
+    load_dotenv()
+    redis_host = os.getenv("redis_host")
+    redis_client = redis.Redis(host=redis_host, port=6379, db=0)
+    return redis_client
+
+def save_to_cache(cache_key, variable): # Save to redis, and pickle for redundancy
+    try:
+        print(f"Saving {cache_key} orders to redis cache")
+        redis_client = redis_connection()
+        
+        redis_client.set(cache_key, pickle.dumps(variable)) # Cache the data in Redis
+        with open(os.path.join('cache', f'{cache_key}.pkl'), 'wb') as fp:
+            pickle.dump(variable, fp)
+    except Exception as e:
+        print("error while saving cache to redis:", e, "Saving only as pickle")
+        pickle_file = cache_key
+        with open(os.path.join('cache', f'{pickle_file}.pkl'), 'wb') as fp:
+            pickle.dump(variable, fp)
+
+def get_from_cache(cache_key):
+    redis_client = redis_connection()
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        print (f"Getting {cache_key} from redis cache")
+        return pickle.loads(cached_data)
+    else:
+        print (f"That failed. Getting {cache_key} from local pickle file as last resort")
+        cache_file = os.path.join('cache', f'{cache_key}.pkl')
+        with open(cache_file, 'rb') as fp:
+            return pickle.load(fp)
 
 def get_market_prices(station_name, order_type, cached):
     prices_dataframe = pd.DataFrame()
@@ -22,7 +57,7 @@ def get_market_prices(station_name, order_type, cached):
     return prices_dataframe
 
 def get_best_prices(order_type):
-    locations_cached = True
+    locations_cached = True # Redis cache should be up to date from other scripts
 
     jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
     amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
@@ -53,7 +88,12 @@ def get_best_prices(order_type):
     #print("agg_df:\n",agg_df)
 
     print("agg_df:\n",agg_df)
-    agg_df.to_pickle(f'cache/lowest_prices_{order_type}.pkl')
+    cache_key = f'best_prices_{order_type}'
+    print(f"Saving best_prices_{order_type} to redis cache")
+    
+    save_to_cache(cache_key, agg_df)
+    #with open(os.path.join('cache', f'{cache_key}.pkl'), 'wb') as fp:
+    #    pickle.dump(agg_df, fp)
     return agg_df
 
 def isNaN(num):
@@ -116,14 +156,15 @@ def process_data():
     print("User gave us this:\n", user_df)
 
 
-    cached = True
+    cached = True # TODO make this either background task or activate based on cache age
     
     if cached == True: 
         try:
-            agg_df = pd.read_pickle(f'cache/lowest_prices_{order_type}.pkl')
-            print("minimum prices loaded from cache")
-        except FileNotFoundError: 
-            print(f"no lowest_prices_{order_type}.pkl cache file found, creating a new one.")
+            cache_key = f'best_prices_{order_type}'
+            agg_df = get_from_cache(cache_key)
+            print("minimum prices loaded from redis cache")
+        except: 
+            print(f"Could not read price cache. Calculating again...")
             agg_df = get_best_prices(order_type)
     else: 
         print('Calculating a new list of best prices...')
@@ -164,7 +205,7 @@ def process_data():
                 if order_type == 'sell': 
                     location_totals[value] = 'Everything not available' 
                 if order_type == 'buy:':
-                    location_totals[value] = 'No existing buy orders for everything' # if user wants to buy using buy orders, no existin orders isn't an issue but the data was already nan so 🤷
+                    location_totals[value] = 'No existing buy orders for everything' # if user wants to buy using buy orders, no existing orders isn't really an issue but the data was already nan so 🤷
             if user_wants_to == 'sell':
                 if order_type == 'sell':
                     location_totals[value] = 'No existing sell orders for everything' 
