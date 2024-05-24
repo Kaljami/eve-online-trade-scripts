@@ -17,3 +17,5 @@ asyncio
 nest_asyncio
 tqdm
 redis
+numpy
+flask
