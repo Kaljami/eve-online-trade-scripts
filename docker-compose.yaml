@@ -1,0 +1,18 @@
+version: '3'
+services:
+  multi_appraisal:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: python ./multi_appraisal.py
+    ports:
+      - "5000:5000"
+    environment:
+      redis_host: ""
+      mysql_user: ''
+      mysql_password: ''
+      mysql_host: ''
+      mysql_database: 'eve_data'
+      mysql_database_fuzzworks: 'fuzz'
+
+# mysql_database_fuzzworks is a separate database for static data imported from fuzzworks
