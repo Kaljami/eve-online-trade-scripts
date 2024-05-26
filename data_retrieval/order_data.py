@@ -243,13 +243,15 @@ def update_caches(force=False):
     time_since_prices = check_metadata('prices')
     if time_since_prices > timedelta(hours=2) or force == True:
         print("it's time to update prices!")
+        logging.info("Starting to update price caches")
         sso_session = temp_test_oauth_session(sso_file)
         locations = ['Jita', 'Amarr', '1DQ1-A']
         types = ['buy', 'sell']
 
         for location in locations:
             for order_type in types:
-                print(f"Location: {location}, Type: {order_type}")
+                print(f"Loading prices from location: {location}, Type: {order_type}")
+                logging.info(f"Loading prices from location: {location}, Type: {order_type}")
                 get_all_orders(location, order_type, False, sso_session)
         get_average_prices(False)
         update_metadata(prices=True)
@@ -259,13 +261,16 @@ def update_caches(force=False):
     time_since_blueprints = check_metadata('blueprints')
     if time_since_blueprints > timedelta(hours=24) or force == True:
         print("it's time to update blueprints!")
-        update_contract_values()
+        update_blueprint_values()
         update_metadata(blueprints=True)
     else:
         print(f"it's been {time_since_blueprints} since blueprint values were updated")
 
 # This is here because I got stuck in circular imports 😭
-def update_contract_values():
+def update_blueprint_values():
+
+    # TODO add option to ignore blueprint categories. Or maybe do it when querying elsewhere. 
+
     prices_dataframe_sell = get_prices_from_station('Jita','sell', True)
     prices_dataframe_buy = get_prices_from_station('Jita','buy', True)
 

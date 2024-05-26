@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.order_data import get_prices_from_station
 from data_retrieval.order_data import get_average_prices, update_caches
-from data_processing.types_in_group import get_rig_type_ids
+from data_processing.types_in_group import get_rig_type_ids, get_all_blueprint_type_ids
 from data_processing.sde_utils import get_item_names
 from datetime import datetime, timezone
 from time import sleep
@@ -34,16 +34,16 @@ db_database = os.getenv("mysql_database")
 
 # Contracts: 
 regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
-minimum_profit_percentage = 15
-good_profit_percentage = 30
-minimum_profit_absolute = 30000000 # 30 million
-good_profit_absolute = 150000000 # 150 million. Send notification if profit is above this treshold even if percentage is lower. 
+minimum_profit_percentage = 30
+good_profit_percentage = 40
+minimum_profit_absolute = 80000000 # 80 million
+good_profit_absolute = 1000000000 # 1 billion. Send notification if profit is above this treshold even if percentage is lower. 
 maximum_volume_br = 13000
 maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
 ignore_rigs = True
-ignore_list = ['Daredevil Blueprint', 'Strong * Booster Blueprint'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
+ignore_list = ['Daredevil Blueprint', 'Strong * Booster Blueprint', 'Monitor Blueprint', 'Neurolink Enhancer Reservoir Blueprint', '*Frentix*'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
 
 # Prices: 
 contract_items_price_system = 'Jita'
@@ -262,21 +262,25 @@ def get_contract_items_value(contract_id, prices_dataframe):
             logging.error(f"Error on get_contract_items_value() when processing contract_id {contract_id}. The contract did not have a type_id column.")
             return 0, 0, 0,'no market value', pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0])  # Skip contracts without a 'type_id'
     #print("dataframe before prices: \n", items_df)
-    merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Using how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
+    merged_items_df = items_df.merge(prices_dataframe, left_on='type_id', right_index=True, how='left') # Merge prices to the items. Using how='left' because otherwise types missing from prices_dataframe (bpc's) would be lost
     
-    # Merge items_df with prices_dataframe_sell based on type_id
-    merged_items_df = items_df.merge(prices_dataframe_average, left_on='type_id', right_index=True, how='left', suffixes=('', '_avg')) # BPO's always use average price
-
-    #merged_items_df.loc[merged_items_df['type_id'].isin(all_blueprint_type_ids), 'price'] = prices_dataframe_sell.loc[29086,'price']
-    merged_items_df['type_name'] = merged_items_df['type_id'].map(type_names)
+    merged_items_df['type_name'] = merged_items_df['type_id'].map(type_names) # Add names for the items
     
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
-    merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True)
-    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['price'] # If items are requested (is_included == False), add their total value to the column "requested_price"
-    if ignore_rigs:
-         merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'price'] = 0 # Set rig value to 0 (this assumes every rig is fitted and cannot be sold)
+    merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True) # Add packaged volumes for items
+
+    # If items are requested (is_included == False), add their total value to the column "requested_price"
+    merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['price'] 
     
+    # Set rig value to 0 if setting is true (this assumes every rig is fitted and cannot be sold. Non-fitted rigs will also be ignored, beware.)
+    if ignore_rigs:
+         merged_items_df.loc[merged_items_df['type_id'].isin(rig_type_ids), 'price'] = 0 
+    
+    # set BPOs to use average price. Basically the npc sell price or a bit over. Does not account for increased value from research. TODO: start tracking sold researched prices. 
+    merged_items_df.loc[merged_items_df['type_id'].isin(blueprint_type_ids), 'price'] = merged_items_df['type_id'].map(prices_dataframe_average['price'])  
+
+    # Add values of blueprint copies. Should not override BPO prices. 
     #print("dataframe before merging bp profit:\n", merged_items_df)
     if 'is_blueprint_copy' in merged_items_df.columns:
         merged_items_df = merged_items_df.merge(blueprint_values_df['blueprint_profit'], left_on='type_id', right_index=True, how='left')
@@ -300,7 +304,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     total_packaged_volume = merged_items_df['total_volume'].sum() # Calculate total volume
 
     with warnings.catch_warnings():
-        warnings.simplefilter(action='ignore', category=FutureWarning)
+        warnings.simplefilter(action='ignore', category=FutureWarning) # stop logging and printing warnings
         try:
             max_price_index = merged_items_df['price'].idxmax()
             top_item_name = merged_items_df.at[max_price_index, 'type_name']
@@ -460,6 +464,7 @@ packaged_volumes_dataframe = load_packaged_volumes()
 rig_type_ids = get_rig_type_ids()
 blueprint_values_df = get_blueprint_profits()
 type_names = get_item_names()
+blueprint_type_ids = get_all_blueprint_type_ids()
 
 prices_dataframe_sell = get_market_prices("Jita", 'sell', use_cached_prices)
 #print(prices_dataframe_sell)

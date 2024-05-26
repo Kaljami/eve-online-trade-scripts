@@ -190,3 +190,4 @@ static/types_packaged_volumes.json
 cron_runner*.sh
 logs/*
 templates/*
+docker-compose copy.yaml
