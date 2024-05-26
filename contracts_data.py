@@ -44,6 +44,7 @@ maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
 ignore_rigs = True
 ignore_list = ['Daredevil Blueprint', 'Strong * Booster Blueprint', 'Monitor Blueprint', 'Neurolink Enhancer Reservoir Blueprint', '*Frentix*'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
+# TODO: one day, make discord bot listen so you can manage these setting from discord. 
 
 # Prices: 
 contract_items_price_system = 'Jita'
@@ -410,6 +411,13 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     return embed
 
 
+def is_ignored(item_name):
+    for pattern in ignore_list:
+        if fnmatch.fnmatch(item_name, pattern):
+            print(f'Not notifying for an item on ignore list: {pattern}')
+            logging.info(f'Not notifying for an item on ignore list: {pattern}')
+            return True
+    return False
 
 async def really_send_embed():
     n_good_profit_margin = 0
@@ -425,11 +433,9 @@ async def really_send_embed():
         top_item_name = row['top_item_name']
 
         if top_item_name is not None:
-            for pattern in ignore_list:
-                if fnmatch.fnmatch(row['top_item_name'], pattern):
-                    print(f'Not notifying for an item on ignore list: {pattern}')
-                    logging.info(f'Not notifying for an item on ignore list: {pattern}')
-                    break
+            if is_ignored(top_item_name) == True:
+                continue
+        
 
         # Calculations
         discount = 1 - price/jita_buy_value
