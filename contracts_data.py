@@ -6,8 +6,7 @@ import pandas as pd
 import nest_asyncio
 from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
-from data_retrieval.order_data import get_prices_from_station
-from data_retrieval.order_data import get_average_prices, update_caches
+from data_retrieval.order_data import get_prices_from_station, get_average_prices, update_caches, redis_connection
 from data_processing.types_in_group import get_rig_type_ids, get_all_blueprint_type_ids
 from data_processing.sde_utils import get_item_names
 from datetime import datetime, timezone

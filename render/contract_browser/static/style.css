@@ -1,0 +1,199 @@
+.dataframe *, .dataframe {
+    border: none;
+    border-collapse: collapse;
+}
+
+.dataframe thead tr {
+    text-align: center !important;
+}
+
+/* .dataframe thead tr th:nth-child(2) {
+    visibility: hidden;
+} */
+
+.dataframe tbody tr th {
+    text-align: right;
+}
+
+.dataframe tbody tr {
+    border-bottom: 1px solid #555555;
+}
+
+.dataframe tbody tr:nth-child(even) {
+    background: #202020;
+}
+
+/* .dataframe tbody tr td:nth-child(2) {
+    color: #555555;
+    padding-right: 10px;
+    padding-left: 5px;
+} */
+
+.dataframe tbody tr td {
+    text-align: right;
+}
+
+body {
+    background-color: #333; /* Dark background color */
+    color: #fff; /* Text color */
+    font-family: Arial, sans-serif; /* Choose a suitable font */
+    padding: 20px; /* Add some padding for better readability */
+}
+h1 {
+    text-align: center; /* Center align the heading */
+}
+p {
+    text-align: center;
+}
+form {
+    max-width: 500px; /* Limit form width for better readability */
+    margin: 0 auto; /* Center the form horizontally */
+}
+textarea {
+    width: 100%; /* Make the textarea full width */
+    padding: 10px; /* Add padding for better readability */
+    border: none; /* Remove default border */
+    border-radius: 10px; /* Apply rounded corners */
+    margin-bottom: 10px; /* Add some space between textarea and button */
+}
+input[type="submit"] {
+    width: 100%; /* Make the button full width */
+    padding: 10px; /* Add padding for better readability */
+    margin: 10px 0;
+    border: none; /* Remove default border */
+    border-radius: 10px; /* Apply rounded corners */
+    background-color: #4CAF50; /* Green button color */
+    color: white; /* Button text color */
+    cursor: pointer; /* Change cursor on hover */
+}
+input[type="submit"]:hover {
+    background-color: #45a049; /* Darken button color on hover */
+}
+table {
+    width: 100%;
+}
+th {
+    text-align: left;
+    padding: 1px 6px;
+}
+td {
+    padding: 1px 6px;
+}
+li {
+    padding: 5px 0;
+}
+.blue { 
+    color: rgb(108, 175, 209); 
+    text-shadow: 0px 0 3px #000000;
+}
+.yellow { 
+    color: rgb(196, 185, 33); 
+    text-shadow: 0px 0 3px #000000;
+}
+.red {
+    color: rgb(223 0 0);
+    text-shadow: 0px 0 3px #4b4b4b;
+}
+.centered {
+    margin: auto;
+    width: 80%;
+    padding: 10px;
+}
+.sr-only {
+    position: absolute;
+    top: -30em;
+  }
+  
+  table.sortable td,
+  table.sortable th {
+    padding: 0.125em 0.25em;
+    /* width: 8em; */
+  }
+  
+  table.sortable th {
+    font-weight: bold;
+    border-bottom: thin solid #888;
+    position: relative;
+  }
+  
+  table.sortable th.no-sort {
+    padding-top: 0.35em;
+  }
+  
+  table.sortable th button {
+    padding: 4px;
+    margin: 1px;
+    font-size: 100%;
+    font-weight: bold;
+    background: transparent;
+    border: none;
+    display: inline;
+    right: 0;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    text-align: left;
+    outline: none;
+    cursor: pointer;
+    color: white;
+  }
+  
+  table.sortable th button span {
+    position: absolute;
+    right: 4px;
+  }
+  
+  table.sortable th[aria-sort="descending"] span::after {
+    content: "▼";
+    color: currentcolor;
+    font-size: 100%;
+    top: 0;
+  }
+  
+  table.sortable th[aria-sort="ascending"] span::after {
+    content: "▲";
+    color: currentcolor;
+    font-size: 100%;
+    top: 0;
+  }
+  
+  table.show-unsorted-icon th:not([aria-sort]) button span::after {
+    content: "♢";
+    color: currentcolor;
+    font-size: 100%;
+    position: relative;
+    top: -3px;
+    left: -4px;
+  }
+  
+  table.sortable td.num {
+    text-align: right;
+  }
+  
+  table.sortable tbody tr:nth-child(odd) {
+    background-color: #dddddd3d;
+  }
+  
+  /* Focus and hover styling */
+  
+  table.sortable th button:focus,
+  table.sortable th button:hover {
+    padding: 2px;
+    border: 2px solid currentcolor;
+    background-color: #e5f4ff;
+  }
+  
+  table.sortable th button:focus span,
+  table.sortable th button:hover span {
+    right: 2px;
+  }
+  
+  table.sortable th:not([aria-sort]) button:focus span::after,
+  table.sortable th:not([aria-sort]) button:hover span::after {
+    content: "▼";
+    color: currentcolor;
+    font-size: 100%;
+    top: 0;
+  }
+  
