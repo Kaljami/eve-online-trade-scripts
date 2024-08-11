@@ -189,6 +189,7 @@ window.addEventListener('load', function () {
             <th>Location</th>
             <th class="num" aria-sort="ascending"><button>Jita<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>Amarr<span aria-hidden="true"></span></button></th>
+            <th class="num" aria-sort="ascending"><button>Dodixie<span aria-hidden="true"></span></button></th>
                 <th class="num" aria-sort="ascending"><button>1DQ1-A<span aria-hidden="true"></span></button></th>
             <!-- Add more columns as needed -->
         </tr>
@@ -199,9 +200,10 @@ window.addEventListener('load', function () {
             <td>{{ row['type_name'] }}</td>
             <td>{{ row['quantity'] }}</td>
             <td class="num">{{ row['best_price'] | format_number }}</td>
-            <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
+            <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == 'Dodixie' %} class="green" {% elif row['best_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
             <td class="num">{{ row['t_price_jita'] | format_number }}</td>
             <td class="num">{{ row['t_price_amarr'] | format_number }}</td>
+            <td class="num">{{ row['t_price_dodixie'] | format_number }}</td>
             <td class="num">{{ row['t_price_delve'] | format_number }}</td>
             <!-- Add more columns as needed -->
         </tr>
@@ -214,6 +216,7 @@ window.addEventListener('load', function () {
         <li>Total of best prices: {{ total_best }}</li>
         <li>Total at Jita: {{ total_jita }}</li>
         <li>Total at Amarr: {{ total_amarr }}</li>
+        <li>Total at Dodixie: {{ total_dodixie }}</li>
         <li>Total at 1DQ1-A: {{ total_delve }}</li>
     </ul>
 </body>

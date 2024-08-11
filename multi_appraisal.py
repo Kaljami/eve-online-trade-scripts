@@ -62,10 +62,13 @@ def get_best_prices(order_type):
     jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
     amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
     delve_sell_df = get_market_prices('1DQ1-A', order_type, locations_cached)
+    dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
+
+    
     # TODO add dodixie and selection for locations
     print("Calculating best prices...")
     # List of DataFrames
-    sell_dfs = [jita_sell_df, amarr_sell_df, delve_sell_df]
+    sell_dfs = [jita_sell_df, amarr_sell_df, delve_sell_df, dodixie_sell_df]
     # Combine DataFrames based on 'type_id'
     combined_df = pd.concat(sell_dfs)
     combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
@@ -80,10 +83,11 @@ def get_best_prices(order_type):
     agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
     agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
     agg_df['price_delve'] = agg_df.index.map(lambda x: delve_sell_df.loc[x, 'price'] if x in delve_sell_df.index else None)
+    agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
 
     # Rename columns for clarity
     agg_df.columns = ['min_price', 'min_price_location', 'max_price', 'max_price_location',
-                        'price_amarr', 'price_jita', 'price_delve']
+                        'price_amarr', 'price_jita', 'price_delve', 'price_dodixie']
     agg_df.reset_index(inplace=True) # Reset index again just to be sure
     #print("agg_df:\n",agg_df)
 
@@ -180,6 +184,7 @@ def process_data():
     output_df['t_price_jita'] = user_df['price_jita'] * user_df['quantity'] 
     output_df['t_price_amarr'] = user_df['price_amarr'] * user_df['quantity']
     output_df['t_price_delve'] = user_df['price_delve'] * user_df['quantity']
+    output_df['t_price_dodixie'] = user_df['price_dodixie'] * user_df['quantity']
 
 
     # different display based on what the user is doing:
@@ -195,7 +200,8 @@ def process_data():
         'best':output_df['best_price'].sum(skipna=False),
         'amarr':output_df['t_price_amarr'].sum(skipna=False),
         'jita':output_df['t_price_jita'].sum(skipna=False),
-        'delve':output_df['t_price_delve'].sum(skipna=False)
+        'delve':output_df['t_price_delve'].sum(skipna=False),
+        'dodixie':output_df['t_price_dodixie'].sum(skipna=False),
         }
     
     # add prettier explanation if something is missing from a location
@@ -222,6 +228,7 @@ def process_data():
         total_best=location_totals['best'], 
         total_jita=location_totals['jita'], 
         total_amarr=location_totals['amarr'],
+        total_dodixie=location_totals['dodixie'],
         total_delve=location_totals['delve'],
         result=output_df,
         order_type = order_type,

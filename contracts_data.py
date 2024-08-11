@@ -185,7 +185,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     with ThreadPoolExecutor() as executor:
         
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
-        for future in tqdm(futures, desc=f"Processing {region_name} contracts", unit="contracts", total=len(futures)):
+        for future in tqdm(futures, desc=f"Processing {region_name} contract contents", unit="contracts", total=len(futures)):
             try:
                 contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df = future.result()
                 if items_df is None:
@@ -197,8 +197,8 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
                 items_dfs.append(items_df)
             except Exception as e:
                 print(f"Error while processing contract {ie_contracts_df['contract_id']}: {e} Future result: {future.result()}")
-            
-
+    print(f"Finished loading {region_name} contracts. Starting to create ie_contracts_df...")
+    
     ie_contracts_df['jita_buy_value'] = contract_values
     ie_contracts_df['packaged_volume'] = contract_packaged_volumes
     ie_contracts_df['price'] = ie_contracts_df['price'] + total_requested_prices
@@ -206,7 +206,8 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     ie_contracts_df['region_name'] = region_name
     
     try:
-        region_items_df = reduce(merge_dfs, items_dfs)
+        print(f"Merging {len(items_dfs)} item dataframes...")
+        region_items_df = merge_dfs_in_chunks(items_dfs)
     except Exception as e:
         print(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
         logging.info(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
@@ -222,6 +223,20 @@ def merge_dfs(left, right):
         print(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
         logging.error(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
 
+def merge_dfs_in_chunks(dfs, chunk_size=20, desc="Merging dataframes in chunks"):
+    # Split the list of dataframes into smaller chunks
+    chunks = [dfs[i:i + chunk_size] for i in range(0, len(dfs), chunk_size)]
+    
+    merged_chunks = []
+    
+    # Merge each chunk of dataframes with progress tracking
+    for chunk in tqdm(chunks, desc=desc, unit="chunk"):
+        merged_chunk = reduce(merge_dfs, chunk)
+        merged_chunks.append(merged_chunk)
+    
+    # Finally, merge all the merged chunks together with progress tracking
+    final_result = reduce(merge_dfs, tqdm(merged_chunks, desc="Merging final chunks", unit="chunk"))
+    return final_result
 
 
 def get_blueprint_profits(): 
@@ -376,6 +391,9 @@ def send_discord_message(message): # Required to send a ping as a separate messa
     else:
         print("Payload delivered successfully, code {}.".format(send_to_webhook.status_code))
         logging.debug("Notification message delivered successfully, code {}.".format(send_to_webhook.status_code))
+
+def skip_discord_message(message):
+    print("Skipped sending message. Do not forget about this! -----------------------------------------------------")
 
 def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name): # Create a new embed instance to be sent
     

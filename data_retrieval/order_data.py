@@ -245,7 +245,7 @@ def update_caches(force=False):
         print("it's time to update prices!")
         logging.info("Starting to update price caches")
         sso_session = temp_test_oauth_session(sso_file)
-        locations = ['Jita', 'Amarr', '1DQ1-A']
+        locations = ['Jita', 'Amarr', '1DQ1-A', 'Dodixie']
         types = ['buy', 'sell']
 
         for location in locations:

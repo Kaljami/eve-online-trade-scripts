@@ -321,24 +321,27 @@ def get_character_journal():
     #print (response.headers)
     #print ("journal:", journal)
     journal_dataframe = pd.DataFrame(journal)
-    #print(journal_dataframe)
-    journal_dataframe['date'] = pd.to_datetime(journal_dataframe['date'])
-    journal_dataframe['date'] = journal_dataframe['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    journal_dataframe['character_id'] = character_id
-    journal_dataframe['character_name'] = character_name
-    #journal_dataframe.to_sql('journal', con=engine, if_exists='append', index=False)
-    existing_entries_query = "SELECT id FROM journal"
-    existing_entries = pd.read_sql(existing_entries_query, con=engine)
-    journal_dataframe.drop_duplicates(subset='id', keep='first', inplace=True) # might be needed for "ref_type": "bounty_surcharge" since it has duplicate ID. 
-    new_entries = journal_dataframe[~journal_dataframe['id'].isin(existing_entries['id'])]
-    try:
-        new_entries.to_sql('journal', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
-        print(f"Wallet journal for {character_name} saved in MySQL")
-    except Exception as e:
-        print(f"Unable to save wallet journal for {character_name} in MySQL. CSV dump saved as exports/debug_journal.csv. Error:")
-        print(e)
-        new_entries.to_csv('exports/debug_journal.csv')
-        logging.error(f"Unable to save wallet journal for {character_name} in MySQL. CSV dump saved as exports/debug_journal.csv. Error: {e}")
+    print(journal_dataframe)
+    if not journal_dataframe.empty:
+        journal_dataframe['date'] = pd.to_datetime(journal_dataframe['date'])
+        journal_dataframe['date'] = journal_dataframe['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        journal_dataframe['character_id'] = character_id
+        journal_dataframe['character_name'] = character_name
+        #journal_dataframe.to_sql('journal', con=engine, if_exists='append', index=False)
+        existing_entries_query = "SELECT id FROM journal"
+        existing_entries = pd.read_sql(existing_entries_query, con=engine)
+        journal_dataframe.drop_duplicates(subset='id', keep='first', inplace=True) # might be needed for "ref_type": "bounty_surcharge" since it has duplicate ID. 
+        new_entries = journal_dataframe[~journal_dataframe['id'].isin(existing_entries['id'])]
+        try:
+            new_entries.to_sql('journal', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
+            print(f"Wallet journal for {character_name} saved in MySQL")
+        except Exception as e:
+            print(f"Unable to save wallet journal for {character_name} in MySQL. CSV dump saved as exports/debug_journal.csv. Error:")
+            print(e)
+            new_entries.to_csv('exports/debug_journal.csv')
+            logging.error(f"Unable to save wallet journal for {character_name} in MySQL. CSV dump saved as exports/debug_journal.csv. Error: {e}")
+    else: 
+        print(f"Journal for {character_id} was empty")
 
 
 def get_character_transactions():
@@ -376,15 +379,17 @@ def get_character_contracts():
         all_contracts.set_index('contract_id', inplace=True)
 
         ### set one as finished for testing
-        all_contracts.at[203677843, 'status'] = 'finished'
+        #all_contracts.at[203677843, 'status'] = 'finished'
         ### 
         
         try: # check if character_contracts exist:
             existing_entries_query = f"SELECT * FROM character_contracts WHERE issuer_id = {character_id}"
             existing_entries = pd.read_sql(existing_entries_query, con=engine)
             existing_entries.set_index('contract_id', inplace=True)
+            print("existing character contracts:", existing_entries)
 
             # Find rows where the status is not equal in these dataframes
+            
             comparison_mask = all_contracts['status'].loc[existing_entries.index] != existing_entries['status']
             unequal_rows = comparison_mask[comparison_mask].index
             recently_finished = all_contracts.loc[unequal_rows]
@@ -403,7 +408,7 @@ def get_character_contracts():
             new_entries.to_sql('character_contracts', con=engine, if_exists='append', index=True, method='multi', chunksize=1000)
 
 
-        except exc.ProgrammingError as e:
+        except Exception as e:
             logging.error(f'Error while saving character contracts: {e}')
             logging.debug('Created a new table character_contracts in mysql')
             all_contracts.to_sql('character_contracts', con=engine, if_exists='replace', index=True, method='multi', chunksize=1000)
