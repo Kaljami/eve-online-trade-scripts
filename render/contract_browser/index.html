@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-appraisal alpha</title>
+    <title>Contract Browser Alpha</title>
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
 
@@ -173,43 +173,87 @@ window.addEventListener('load', function () {
 });
 
         </script>
+        <!-- JavaScript code to handle AJAX request -->
+        <script>
+            function openContract(contractId) {
+                fetch(`/open_contract/${contractId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === "success") {
+                            console.log(data.message);
+                            // Optionally, display a success message to the user
+                        } else {
+                            console.error(data.message);
+                            // Optionally, display an error message to the user
+                        }
+                    })
+                    .catch(error => console.error('Error:', error));
+            }
+        </script>
 </head>
 <body>
-    <!-- <h1>DataFrame Result</h1>
-    {{ table | safe }} -->
+    <h1>DataFrame Result</h1>
+    <!-- {{ table | safe }} -->
     <br>
+    <form action="/filter_contracts" method="post">
+      <label for="selected_region">Region:</label><br>
+      <input type="text" id="selected_region" name="selected_region"><br>
+      <label for="min_profit">min_profit:</label><br>
+      <input type="text" id="min_profit" name="min_profit"><br>
+      <label for="max_volume">max_volume:</label><br>
+      <input type="text" id="max_volume" name="max_volume"><br>
+      <h4>ignore</h4>
+      <label for="all_blueprints">all_blueprints</label>
+      <input type="checkbox" id="all_blueprints" name="all_blueprints" value="all_blueprints">
+      <br>
+      <input type="submit" value="Submit">
+    </form>
     <div class="table_container centered">
     <table border="1" id="result_table" class="sortable">
         <thead>
         <tr>
             <th class="num" aria-sort="ascending"><button>contract_id<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>price<span aria-hidden="true"></span></button></th>
-            <th class="num" aria-sort="ascending"><button>start_location_id<span aria-hidden="true"></span></button></th>
+            <!-- <th class="num" aria-sort="ascending"><button>start_location_id<span aria-hidden="true"></span></button></th> -->
             <th class="num" aria-sort="ascending"><button>jita_buy_value<span aria-hidden="true"></span></button></th>
+            <th class="num" aria-sort="ascending"><button>mat. price<span aria-hidden="true"></span></button></th>
+            <th class="num" aria-sort="ascending"><button>profit<span aria-hidden="true"></span></button></th>
+            <th class="num" aria-sort="ascending"><button>profit_margin<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>date_issued<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>region_name<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>packaged_volume<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>top_item_name<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>date_discovered<span aria-hidden="true"></span></button></th>
-            <th class="num" aria-sort="ascending"><button>profit<span aria-hidden="true"></span></button></th>
-            <th class="num" aria-sort="ascending"><button>profit_margin<span aria-hidden="true"></span></button></th>
             <!-- Add more columns as needed -->
         </tr>
         </thead>
         <tbody>
         {% for index, row in result.iterrows() %}
         <tr>
-            <td>{{ row['contract_id'] }}</td>
+            <td>
+                <button type="button" class="btn btn-link" onclick="openContract('{{ row['contract_id'] }}')">{{ row['contract_id'] }}</button>
+            </td>
+            <!-- <td>
+              <form action="{{ url_for('open_contract', contract_id=row['contract_id']) }}" method="get">
+                  <button type="submit" class="btn btn-link">{{ row['contract_id'] }}</button>
+              </form>
+          </td> -->
+            <!-- for some reason this works with validation error -->
             <td class="num">{{ row['price'] | format_number }}</td>
-            <td>{{ row['start_location_id'] }}</td>
+            <!-- <td>{{ row['start_location_id'] }}</td> -->
             <td class="num">{{ row['jita_buy_value'] | format_number }}</td>
+            <td class="num">{{ row['total_material_price'] | format_number }}</td>
+            <td class="num">{{ row['profit'] | format_number }}</td>
+            <td>{{ row['profit_margin_pct'] }}</td>
             <td>{{ row['date_issued'] }}</td>
             <td>{{ row['region_name'] }}</td>
             <td class="num">{{ row['packaged_volume'] | format_number }}</td>
-            <td>{{ row['top_item_name'] }}</td>
+            <td>
+              <form action="{{ url_for('view_contract', contract_id=row['contract_id']) }}" method="get">
+                  <button type="submit" class="btn btn-link">{{ row['top_item_name'] }}</button>
+              </form>
+            </td>
             <td>{{ row['date_discovered'] }}</td>
-            <td class="num">{{ row['profit'] | format_number }}</td>
-            <td>{{ row['profit_margin_pct'] }}</td>
             <!-- Add more columns as needed -->
         </tr>
         {% endfor %}

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contract Browser Alpha</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
+    <script>
+        function openContract(contractId) {
+            fetch(`/open_contract/${contractId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        console.log(data.message);
+                        // Optionally, display a success message to the user
+                    } else {
+                        console.error(data.message);
+                        // Optionally, display an error message to the user
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    </script>
+</head>
+<body>
+    <h1>Contents of contract {{ contract_id }}</h1>
+    {{ table | safe }}
+    <br>
+    {{ info_table | safe }}
+    <br>
+    <div class="centered">
+    
+    <form action="{{ url_for('index') }}" method="get">
+        <button type="submit" class="btn btn-link">Back to browsing</button>
+        <button type="button" class="btn btn-link open_ingame" onclick="openContract('{{ contract_id }}')">open in-game</button>
+    </form>
+    </div>
+</body>
+</html>

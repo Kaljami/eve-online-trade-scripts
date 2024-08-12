@@ -32,7 +32,7 @@ db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
 
 # Contracts: 
-regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia"]
+regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor"]
 minimum_profit_percentage = 30
 good_profit_percentage = 40
 minimum_profit_absolute = 80000000 # 80 million
@@ -98,7 +98,7 @@ async def async_get_all_contracts(region_id, pages):
 def get_all_contracts_concurrent(region_name):
     """Master function to control async loop and process results."""
 
-    names_to_id = {'Domain': 10000043, 'The Forge': 10000002, 'Sinq Laison': 10000032, 'Heimatar': 10000030, 'Metropolis': 10000042, 'Delve': 10000060, 'Placid': 10000048, 'Essence': 10000064, 'The Citadel': 10000033, 'Lonetrek': 10000016, 'Querious':10000050, 'Period Basis':10000063, 'Fountain':10000058, 'Aridia':10000054}
+    names_to_id = {'Derelik': 10000001, 'The Forge': 10000002, 'Vale of the Silent': 10000003, 'UUA-F4': 10000004, 'Detorid': 10000005, 'Wicked Creek': 10000006, 'Cache': 10000007, 'Scalding Pass': 10000008, 'Insmother': 10000009, 'Tribute': 10000010, 'Great Wildlands': 10000011, 'Curse': 10000012, 'Malpais': 10000013, 'Catch': 10000014, 'Venal': 10000015, 'Lonetrek': 10000016, 'J7HZ-F': 10000017, 'The Spire': 10000018, 'A821-A': 10000019, 'Tash-Murkon': 10000020, 'Outer Passage': 10000021, 'Stain': 10000022, 'Pure Blind': 10000023, 'Immensea': 10000025, 'Etherium Reach': 10000027, 'Molden Heath': 10000028, 'Geminate': 10000029, 'Heimatar': 10000030, 'Impass': 10000031, 'Sinq Laison': 10000032, 'The Citadel': 10000033, 'The Kalevala Expanse': 10000034, 'Deklein': 10000035, 'Devoid': 10000036, 'Everyshore': 10000037, 'The Bleak Lands': 10000038, 'Esoteria': 10000039, 'Oasa': 10000040, 'Syndicate': 10000041, 'Metropolis': 10000042, 'Domain': 10000043, 'Solitude': 10000044, 'Tenal': 10000045, 'Fade': 10000046, 'Providence': 10000047, 'Placid': 10000048, 'Khanid': 10000049, 'Querious': 10000050, 'Cloud Ring': 10000051, 'Kador': 10000052, 'Cobalt Edge': 10000053, 'Aridia': 10000054, 'Branch': 10000055, 'Feythabolis': 10000056, 'Outer Ring': 10000057, 'Fountain': 10000058, 'Paragon Soul': 10000059, 'Delve': 10000060, 'Tenerifis': 10000061, 'Omist': 10000062, 'Period Basis': 10000063, 'Essence': 10000064, 'Kor-Azor': 10000065, 'Perrigen Falls': 10000066, 'Genesis': 10000067, 'Verge Vendor': 10000068, 'Black Rise': 10000069, 'Pochven': 10000070, 'Yasna Zakh': 10001000, 'A-R00001': 11000001, 'A-R00002': 11000002, 'A-R00003': 11000003, 'B-R00004': 11000004, 'B-R00005': 11000005, 'B-R00006': 11000006, 'B-R00007': 11000007, 'B-R00008': 11000008, 'C-R00009': 11000009, 'C-R00010': 11000010, 'C-R00011': 11000011, 'C-R00012': 11000012, 'C-R00013': 11000013, 'C-R00014': 11000014, 'C-R00015': 11000015, 'D-R00016': 11000016, 'D-R00017': 11000017, 'D-R00018': 11000018, 'D-R00019': 11000019, 'D-R00020': 11000020, 'D-R00021': 11000021, 'D-R00022': 11000022, 'D-R00023': 11000023, 'E-R00024': 11000024, 'E-R00025': 11000025, 'E-R00026': 11000026, 'E-R00027': 11000027, 'E-R00028': 11000028, 'E-R00029': 11000029, 'F-R00030': 11000030, 'G-R00031': 11000031, 'H-R00032': 11000032, 'K-R00033': 11000033, 'ADR01': 12000001, 'ADR02': 12000002, 'ADR03': 12000003, 'ADR04': 12000004, 'ADR05': 12000005, 'No Name': 13000001, 'VR-01': 14000001, 'VR-02': 14000002, 'VR-03': 14000003, 'VR-04': 14000004, 'VR-05': 14000005} #lol sure let's hardcode that. What are they gonna do, create a new region? 
     region_id = names_to_id[region_name]
     pages = get_num_pages(region_id)  
 
@@ -146,12 +146,12 @@ def load_packaged_volumes():
 
 def process_contract(contract_id, prices_dataframe):
     try:
-        contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df = get_contract_items_value(contract_id, prices_dataframe)
-        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df
+        contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df
     except Exception as e:
         logging.error(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
         print(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
-        return 0, 0, 0, 'no market value', pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]) # Trying to pass a dummy dataframe if getting the items fails
+        return 0, 0, 0, 'no market value', 0, pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]) # Trying to pass a dummy dataframe if getting the items fails
 
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     #print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
@@ -172,6 +172,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     contract_packaged_volumes = []
     total_requested_prices = []
     top_item_names = []
+    total_material_prices = []
     items_dfs = []
     
     if contract_items_price_type == 'buy':
@@ -186,13 +187,14 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
         for future in tqdm(futures, desc=f"Processing {region_name} contract contents", unit="contracts", total=len(futures)):
             try:
-                contract_value, contract_packaged_volume, total_requested_price, top_item_name, items_df = future.result()
+                contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df = future.result()
                 if items_df is None:
                     raise Exception(f"items_df for contract_id {ie_contracts_df['contract_id'].iloc[0]} was None. Shape: {items_df.shape}")
                 contract_values.append(contract_value)
                 contract_packaged_volumes.append(contract_packaged_volume)
                 total_requested_prices.append(total_requested_price)
                 top_item_names.append(top_item_name)
+                total_material_prices.append(total_material_price)
                 items_dfs.append(items_df)
             except Exception as e:
                 print(f"Error while processing contract {ie_contracts_df['contract_id']}: {e} Future result: {future.result()}")
@@ -202,6 +204,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     ie_contracts_df['packaged_volume'] = contract_packaged_volumes
     ie_contracts_df['price'] = ie_contracts_df['price'] + total_requested_prices
     ie_contracts_df['top_item_name'] = top_item_names
+    ie_contracts_df['total_material_price'] = total_material_prices
     ie_contracts_df['region_name'] = region_name
     
     try:
@@ -240,7 +243,7 @@ def merge_dfs_in_chunks(dfs, chunk_size=20, desc="Merging dataframes in chunks")
 
 def get_blueprint_profits(): 
     #blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values;"
-    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE profit_margin > 0.2;"
+    blueprint_values_query = f"SELECT blueprint_type_id, material_price, product_price, blueprint_profit FROM blueprint_values WHERE profit_margin > 0.2;" # TODO set variable for blueprint profit margin
     blueprint_values_df = pd.read_sql_query(blueprint_values_query, con=engine)
     blueprint_values_df['blueprint_profit'] = blueprint_values_df['blueprint_profit'] * 0.9 # Remove 10% from the profit margin to account for taxes and fees
 
@@ -297,9 +300,11 @@ def get_contract_items_value(contract_id, prices_dataframe):
 
     # Add values of blueprint copies. Should not override BPO prices. 
     #print("dataframe before merging bp profit:\n", merged_items_df)
+    # TODO: add a new column for bpc input material cost to get realistic ROI / profit margin
     if 'is_blueprint_copy' in merged_items_df.columns:
         merged_items_df = merged_items_df.merge(blueprint_values_df['blueprint_profit'], left_on='type_id', right_index=True, how='left')
-        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'price'] = merged_items_df['blueprint_profit'] # blueprint_values_df only has blueprints where profit margin is >20%
+        merged_items_df = merged_items_df.merge(blueprint_values_df['material_price'], left_on='type_id', right_index=True, how='left')
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'price'] = merged_items_df['blueprint_profit'] # set the bpc value to be the build profit margin. blueprint_values_df only has blueprints where profit margin is >20%
         mask = (merged_items_df['is_blueprint_copy'] == True) & ~(merged_items_df['type_id'].isin(blueprint_values_df.index)) # Mask to find blueprint copies that are still missing an value and will be set to 0. 
         merged_items_df.loc[mask, 'price'] = 0
     #print("dataframe after merging bp profit:\n", merged_items_df)
@@ -308,7 +313,11 @@ def get_contract_items_value(contract_id, prices_dataframe):
     merged_items_df['total_price'] = merged_items_df['quantity'] * merged_items_df['price']
     merged_items_df['total_volume'] = merged_items_df['quantity'] * merged_items_df['packaged_volume']
     if 'is_blueprint_copy' in merged_items_df.columns:
-        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'total_price'] = merged_items_df['runs'] * merged_items_df['price']
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'total_price'] = merged_items_df['runs'] * merged_items_df['price'] # multiply bpc value by amount of runs on the bpc
+        merged_items_df.loc[merged_items_df['is_blueprint_copy'] == True, 'total_material_price'] = merged_items_df['runs'] * merged_items_df['material_price']
+        total_material_price = merged_items_df['total_material_price'].sum()
+    else: 
+        total_material_price = 0
     #print(merged_items_df)
     # Calculate the total sum for all rows
     total_sum = merged_items_df['total_price'].sum()
@@ -329,7 +338,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     merged_items_df['contract_id'] = contract_id
     merged_items_df['row_id'] = merged_items_df.index
     #print("final result:\n",merged_items_df)
-    return total_sum, total_packaged_volume, total_requested_price, top_item_name, merged_items_df
+    return total_sum, total_packaged_volume, total_requested_price, top_item_name, total_material_price, merged_items_df
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # remove decimals to make ints pretty

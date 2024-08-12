@@ -191,3 +191,6 @@ cron_runner*.sh
 logs/*
 templates/*
 docker-compose copy.yaml
+public-contracts-latest.v2.tar.bz2
+data_retrieval/latest_contracts/meta.json
+latest_contracts/meta.json

@@ -267,6 +267,7 @@ def update_caches(force=False):
         print(f"it's been {time_since_blueprints} since blueprint values were updated")
 
 # This is here because I got stuck in circular imports 😭
+# TODO maybe automate downloading new SDE versions from https://www.fuzzwork.co.uk/dump/latest/
 def update_blueprint_values():
 
     # TODO add option to ignore blueprint categories. Or maybe do it when querying elsewhere. 
