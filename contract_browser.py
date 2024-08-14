@@ -20,8 +20,6 @@ engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_d
 pd.options.display.float_format = '{:.0f}'.format # disable scientific notation
 def format_number(value):
     return "{:,.0f}".format(value)
-    #return "{0:n}".format(value) # lol what scientific notation no thx 
-    #return value
 app.jinja_env.filters['format_number'] = format_number
 
 ### Index
