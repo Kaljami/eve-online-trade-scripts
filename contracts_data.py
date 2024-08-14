@@ -42,7 +42,7 @@ maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
 ignore_rigs = True
-ignore_list = ['Daredevil Blueprint', 'Strong * Booster Blueprint', 'Monitor Blueprint', 'Neurolink Enhancer Reservoir Blueprint', '*Frentix*'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
+ignore_list = ['Daredevil Blueprint', '* Booster Blueprint', 'Monitor Blueprint', 'Neurolink Enhancer Reservoir Blueprint', 'Structure * Blueprint'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
 # TODO: one day, make discord bot listen so you can manage these setting from discord. 
 
 # Prices: 
