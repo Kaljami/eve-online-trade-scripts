@@ -208,20 +208,6 @@ def get_blueprint_type_ids(search_terms):
             print("interesting_blueprint_type_ids saved as cache/interesting_blueprint_type_ids.pkl")
 
     return blueprint_type_ids
-"""
-# Example usage:
-interesting_blueprints = get_blueprint_type_ids([
-    'Polarized', 
-    'Ancillary Shield', 
-    'Ancillary Armor', 
-    'Standard * Booster Blueprint', 
-    'Improved * Booster Blueprint', 
-    'Strong * Booster Blueprint',
-    'Issue',
-    'Reactive Armor Hardener',
-    'Micro Jump Drive'])
-print(interesting_blueprints)
-"""
 
 def get_all_blueprint_type_ids(): 
     try:

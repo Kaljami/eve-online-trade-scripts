@@ -30,6 +30,7 @@ db_user = os.getenv("mysql_user")
 db_password = os.getenv("mysql_password")
 db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
+db_database_fuzz = os.getenv("mysql_database_fuzzworks")
 
 # Contracts: 
 regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor"]
@@ -63,6 +64,7 @@ pd.set_option('display.float_format', lambda x: '%.2f' % x) # disable scientific
 logging.basicConfig(filename='logs/contracts_data.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
 engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
+engine_fuzz = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database_fuzz}')
 intents = discord.Intents.default() 
 intents.members = True
 intents.message_content = True
@@ -144,14 +146,19 @@ def load_packaged_volumes():
     dataframe.index = dataframe.index.astype(int)
     return dataframe
 
+def load_published_types():
+    published_status_query = "SELECT typeID, published FROM invTypes;"
+    published_status_df = pd.read_sql_query(published_status_query, con=engine_fuzz, index_col='typeID')
+    return published_status_df
+
 def process_contract(contract_id, prices_dataframe):
     try:
-        contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df = get_contract_items_value(contract_id, prices_dataframe)
-        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df
+        contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished
     except Exception as e:
         logging.error(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
         print(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
-        return 0, 0, 0, 'no market value', 0, pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]) # Trying to pass a dummy dataframe if getting the items fails
+        return 0, 0, 0, 'no market value', 0, pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]), 0 # Trying to pass a dummy dataframe if getting the items fails
 
 def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     #print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
@@ -174,6 +181,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     top_item_names = []
     total_material_prices = []
     items_dfs = []
+    contains_unpublished_list = []
     
     if contract_items_price_type == 'buy':
         prices_dataframe = prices_dataframe_buy
@@ -187,7 +195,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
         for future in tqdm(futures, desc=f"Processing {region_name} contract contents", unit="contracts", total=len(futures)):
             try:
-                contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df = future.result()
+                contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished = future.result()
                 if items_df is None:
                     raise Exception(f"items_df for contract_id {ie_contracts_df['contract_id'].iloc[0]} was None. Shape: {items_df.shape}")
                 contract_values.append(contract_value)
@@ -196,6 +204,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
                 top_item_names.append(top_item_name)
                 total_material_prices.append(total_material_price)
                 items_dfs.append(items_df)
+                contains_unpublished_list.append(contains_unpublished)
             except Exception as e:
                 print(f"Error while processing contract {ie_contracts_df['contract_id']}: {e} Future result: {future.result()}")
     print(f"Finished loading {region_name} contracts. Starting to create ie_contracts_df...")
@@ -206,6 +215,7 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     ie_contracts_df['top_item_name'] = top_item_names
     ie_contracts_df['total_material_price'] = total_material_prices
     ie_contracts_df['region_name'] = region_name
+    ie_contracts_df['contains_unpublished'] = contains_unpublished_list
     
     try:
         print(f"Merging {len(items_dfs)} item dataframes...")
@@ -267,6 +277,7 @@ def get_contract_items(contract_id):
     return items
 
 def get_contract_items_value(contract_id, prices_dataframe):
+    contains_unpublished = 0
     try:
         items = get_contract_items(contract_id)
         items_df = pd.DataFrame.from_records(items)
@@ -287,6 +298,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
     merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True) # Add packaged volumes for items
+    merged_items_df = merged_items_df.merge(published_status_df, left_on='type_id', right_index=True, how='left') # Add packaged volumes for items
 
     # If items are requested (is_included == False), add their total value to the column "requested_price"
     merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['price'] 
@@ -337,8 +349,10 @@ def get_contract_items_value(contract_id, prices_dataframe):
     #print("final result:\n",merged_items_df)
     merged_items_df['contract_id'] = contract_id
     merged_items_df['row_id'] = merged_items_df.index
+    contains_unpublished = len(merged_items_df.loc[merged_items_df["published"] == 0])
+    
     #print("final result:\n",merged_items_df)
-    return total_sum, total_packaged_volume, total_requested_price, top_item_name, total_material_price, merged_items_df
+    return total_sum, total_packaged_volume, total_requested_price, top_item_name, total_material_price, merged_items_df, contains_unpublished
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # remove decimals to make ints pretty
@@ -403,13 +417,15 @@ def send_discord_message(message): # Required to send a ping as a separate messa
 def skip_discord_message(message):
     print("Skipped sending message. Do not forget about this! -----------------------------------------------------")
 
-def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name): # Create a new embed instance to be sent
+def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished): # Create a new embed instance to be sent
     
     if (
     (discount > (good_profit_percentage/100)) and
     (difference > minimum_profit_absolute) 
     or
     (difference > good_profit_absolute)
+    or
+    (contains_unpublished > 0)
     ):
         print ("found a good profit!", discount)
         send_discord_message(f"Daddy <{discord_contract_notification_tag_id}> I found a good profit of {p_difference} ISK! It's on contract below :3") # tag the recipient in a separate message 
@@ -428,7 +444,8 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     embed.add_field(name="Packaged volume", value=f"{p_packaged_volume} m3", inline=True)
     embed.add_field(name="Age", value=age_str, inline=True)
     embed.add_field(name="Most valuable item", value=top_item_name, inline=True)
-
+    if contains_unpublished > 0:
+        embed.add_field(name="This contract contains unpublished items!", value=contains_unpublished, inline=True)
     # Add a link to the contract to be used in the in-game notepad
     embed.add_field(name="Paste to in-game notepad", value=f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>", inline=False)
     
@@ -457,6 +474,7 @@ async def really_send_embed():
         region_name = row['region_name']
         packaged_volume = row['packaged_volume']
         top_item_name = row['top_item_name']
+        contains_unpublished = row['contains_unpublished']
 
         if top_item_name is not None:
             if is_ignored(top_item_name) == True:
@@ -482,10 +500,16 @@ async def really_send_embed():
             print("")
             
             #print(f"Attempting to send a message")
-            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name)
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished)
             await send_embed(discord_webhook_url, embed)
             #print ("Message sent")
             n_good_profit_margin += 1
+        if contains_unpublished > 0:
+            print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}, Contains unpublished items!")
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished)
+            await send_embed(discord_webhook_url, embed)
+
+
     logging.info(f"{n_good_profit_margin} of the contracts had profit margin above {minimum_profit_percentage}% and buy value above {minimum_profit_absolute} ISK")
 
 async def main():
@@ -497,6 +521,7 @@ rig_type_ids = get_rig_type_ids()
 blueprint_values_df = get_blueprint_profits()
 type_names = get_item_names()
 blueprint_type_ids = get_all_blueprint_type_ids()
+published_status_df = load_published_types()
 
 prices_dataframe_sell = get_market_prices("Jita", 'sell', use_cached_prices)
 #print(prices_dataframe_sell)

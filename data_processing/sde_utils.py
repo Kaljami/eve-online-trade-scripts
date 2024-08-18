@@ -54,7 +54,7 @@ def load_from_redis(cache_key):
             return pickle.load(fp)
 
 def get_item_names():
-    query = f'SELECT typeID, typeName FROM invTypes WHERE published = 1;'
+    query = f'SELECT typeID, typeName FROM invTypes;'
     engine = db_connection(fuzz=True)
     df = pd.read_sql_query(query, con=engine)
     dict_df = df.set_index('typeID').to_dict()['typeName']
