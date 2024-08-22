@@ -160,7 +160,7 @@ def process_data():
     print("User gave us this:\n", user_df)
 
 
-    cached = True # TODO make this either background task or activate based on cache age
+    cached = True # prices are updated by contracts_data
     
     if cached == True: 
         try:

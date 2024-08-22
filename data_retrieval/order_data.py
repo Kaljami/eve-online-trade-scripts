@@ -209,7 +209,7 @@ def get_average_prices(cached):
     #print(str(avg_prices_dataframe))
     return avg_prices_dataframe
 
-def update_metadata(prices=False, blueprints=False, expired_contracts=False):
+def update_metadata(prices=False, blueprints=False, expired_contracts=False, appraisal_prices=False):
     current_timestamp = datetime.now()
     if prices:
         redis_key = 'price_cache_updated'
@@ -217,6 +217,8 @@ def update_metadata(prices=False, blueprints=False, expired_contracts=False):
         redis_key = 'blueprint_values_updated'
     if expired_contracts:
         redis_key = 'expired_contracts_checked'
+    if appraisal_prices:
+        redis_key = 'appraisal_prices_updated'
     redis_client = redis_connection()
     redis_client.set(redis_key, pickle.dumps(current_timestamp)) # Cache the data in Redis
     print(f"Status updated to redis cache")
@@ -255,6 +257,8 @@ def update_caches(force=False):
                 get_all_orders(location, order_type, False, sso_session)
         get_average_prices(False)
         update_metadata(prices=True)
+        update_appraisal_prices()
+        update_metadata(appraisal_prices=True)
     else:
         print(f"it's been {time_since_prices} since prices were updated")
 
@@ -327,3 +331,69 @@ def update_blueprint_values():
         print(e)
         print(f"Error saving blueprint values to database. Aborting.")
         logging.error(f"Error saving blueprint values to database. Aborting. \n{e}")
+
+
+def update_appraisal_prices():
+    locations_cached = True # market orders were already fetched previously
+
+    for order_type in ['sell', 'buy']:
+        jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
+        amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
+        delve_sell_df = get_market_prices('1DQ1-A', order_type, locations_cached)
+        dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
+
+        
+        # TODO add dodixie and selection for locations
+        print("Calculating best prices...")
+        # List of DataFrames
+        sell_dfs = [jita_sell_df, amarr_sell_df, delve_sell_df, dodixie_sell_df]
+        # Combine DataFrames based on 'type_id'
+        combined_df = pd.concat(sell_dfs)
+        combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
+        
+        agg_df = combined_df.groupby('type_id').apply(lambda x: pd.Series({
+            'min_price': x['price'].min(),
+            'min_price_location': x.loc[x['price'].idxmin(), 'location'],
+            'max_price': x['price'].max(),
+            'max_price_location': x.loc[x['price'].idxmax(), 'location']
+        }))
+        # Extract prices from original dataframes and add them to the aggregated dataframe
+        agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
+        agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
+        agg_df['price_delve'] = agg_df.index.map(lambda x: delve_sell_df.loc[x, 'price'] if x in delve_sell_df.index else None)
+        agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
+
+        # Rename columns for clarity
+        agg_df.columns = ['min_price', 'min_price_location', 'max_price', 'max_price_location',
+                            'price_amarr', 'price_jita', 'price_delve', 'price_dodixie']
+        agg_df.reset_index(inplace=True) # Reset index again just to be sure
+        #print("agg_df:\n",agg_df)
+
+        print("agg_df:\n",agg_df)
+        cache_key = f'best_prices_{order_type}'
+        print(f"Saving best_prices_{order_type} to redis cache")
+        
+        save_to_cache(cache_key, agg_df)
+
+def get_market_prices(station_name, order_type, cached):
+    prices_dataframe = pd.DataFrame()
+    market_prices = get_prices_from_station(station_name, order_type, cached) #set False to get updated prices
+    prices_dataframe['price'] = market_prices
+    prices_dataframe['location'] = station_name
+    if cached == False:
+        print(f"Fresh {station_name} {order_type} order price data downloaded")
+    return prices_dataframe
+
+def save_to_cache(cache_key, variable): # Save to redis, and pickle for redundancy
+    try:
+        print(f"Saving {cache_key} orders to redis cache")
+        redis_client = redis_connection()
+        
+        redis_client.set(cache_key, pickle.dumps(variable)) # Cache the data in Redis
+        with open(os.path.join('cache', f'{cache_key}.pkl'), 'wb') as fp:
+            pickle.dump(variable, fp)
+    except Exception as e:
+        print("error while saving cache to redis:", e, "Saving only as pickle")
+        pickle_file = cache_key
+        with open(os.path.join('cache', f'{pickle_file}.pkl'), 'wb') as fp:
+            pickle.dump(variable, fp)
