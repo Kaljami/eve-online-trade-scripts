@@ -191,9 +191,11 @@ def process_data():
     if user_wants_to == 'buy':
         output_df['best_price'] = output_df['t_min_price']
         output_df['best_price_location'] = output_df['min_price_location']
+        output_df['best_price_volume'] = output_df['min_price_volume']
     elif user_wants_to == 'sell':
         output_df['best_price'] = output_df['t_max_price']
         output_df['best_price_location'] = output_df['max_price_location']
+        output_df['best_price_volume'] = output_df['max_price_volume']
 
     # sum of prices
     location_totals = {

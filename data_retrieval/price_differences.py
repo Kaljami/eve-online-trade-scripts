@@ -61,13 +61,13 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
     }
 
     historical_df = pd.concat(typeID_history_dict, axis=1).T
-    print(historical_df)
+    #print(historical_df)
     if 'date' in historical_df.columns:
         historical_df = historical_df.drop('date', axis='columns')
     historical_df.columns = pd.to_datetime(historical_df.columns, yearfirst=True)
     print('Done!')
 
-    print(f'Pulling out historical volume data for {days} days:')
+    print(f'Pulling out historical volume data for {days} days...')
     v = historical_df.loc[idx[:, 'volume'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
     v = v.fillna(0).mean(axis=1)
     """ FYI TODO
@@ -76,7 +76,7 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
     """
     v = v.droplevel(1, axis=0)
 
-    print(f'Pulling out historical price data for {days} days:')
+    print(f'Pulling out historical price data for {days} days...')
     p = historical_df.loc[idx[:, 'average'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
     p = p.mean(axis=1)
     p = p.droplevel(1, axis=0)

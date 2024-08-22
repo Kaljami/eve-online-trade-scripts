@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from data_retrieval.sso_utils import temp_test_oauth_session
 from data_processing.sde_utils import get_item_names
 import logging
+from data_retrieval.price_differences import get_volume_price_history
 
 
 def db_connection(fuzz=False):
@@ -68,7 +69,7 @@ def get_num_pages(region_id, order_type, sso_session):
         structure_id = 1030049082711
         orders_url = f'https://esi.evetech.net/latest/markets/structures/{structure_id}/'
         if sso_session == None:
-            raise Exception("Must authenticate with SSO to access market on player structures.")
+            raise Exception("Must authenticate with SSO to access market on player structures. Log in with option 6.")
         res = sso_session.get(orders_url, params=params)
     else:
         orders_url = f'https://esi.evetech.net/latest/markets/{region_id}/orders/'
@@ -341,7 +342,7 @@ def update_appraisal_prices():
         amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
         delve_sell_df = get_market_prices('1DQ1-A', order_type, locations_cached)
         dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
-
+        
         
         # TODO add dodixie and selection for locations
         print("Calculating best prices...")
@@ -354,22 +355,18 @@ def update_appraisal_prices():
         agg_df = combined_df.groupby('type_id').apply(lambda x: pd.Series({
             'min_price': x['price'].min(),
             'min_price_location': x.loc[x['price'].idxmin(), 'location'],
+            'min_price_volume': x.loc[x['price'].idxmin(), 'daily_volume'],
             'max_price': x['price'].max(),
-            'max_price_location': x.loc[x['price'].idxmax(), 'location']
+            'max_price_location': x.loc[x['price'].idxmax(), 'location'],
+            'max_price_volume': x.loc[x['price'].idxmin(), 'daily_volume']
         }))
+        #print(agg_df)
         # Extract prices from original dataframes and add them to the aggregated dataframe
         agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
         agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
         agg_df['price_delve'] = agg_df.index.map(lambda x: delve_sell_df.loc[x, 'price'] if x in delve_sell_df.index else None)
         agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
-
-        # Rename columns for clarity
-        agg_df.columns = ['min_price', 'min_price_location', 'max_price', 'max_price_location',
-                            'price_amarr', 'price_jita', 'price_delve', 'price_dodixie']
-        agg_df.reset_index(inplace=True) # Reset index again just to be sure
-        #print("agg_df:\n",agg_df)
-
-        print("agg_df:\n",agg_df)
+        
         cache_key = f'best_prices_{order_type}'
         print(f"Saving best_prices_{order_type} to redis cache")
         
@@ -382,6 +379,9 @@ def get_market_prices(station_name, order_type, cached):
     prices_dataframe['location'] = station_name
     if cached == False:
         print(f"Fresh {station_name} {order_type} order price data downloaded")
+
+    historical_volume, historical_price = get_volume_price_history(station_name, prices_dataframe.index, 7, False)
+    prices_dataframe = prices_dataframe.merge(historical_volume.rename('daily_volume'), how='left', left_on='type_id', right_index=True)
     return prices_dataframe
 
 def save_to_cache(cache_key, variable): # Save to redis, and pickle for redundancy

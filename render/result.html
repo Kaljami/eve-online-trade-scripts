@@ -186,12 +186,12 @@ window.addEventListener('load', function () {
             <th>Name</th>
             <th>QTY</th>
             <th class="num" aria-sort="ascending"><button>Best price<span aria-hidden="true"></span></button></th>
+            <th>Daily volume</th>
             <th>Location</th>
             <th class="num" aria-sort="ascending"><button>Jita<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>Amarr<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>Dodixie<span aria-hidden="true"></span></button></th>
-                <th class="num" aria-sort="ascending"><button>1DQ1-A<span aria-hidden="true"></span></button></th>
-            <!-- Add more columns as needed -->
+            <th class="num" aria-sort="ascending"><button>1DQ1-A<span aria-hidden="true"></span></button></th>
         </tr>
         </thead>
         <tbody>
@@ -200,6 +200,7 @@ window.addEventListener('load', function () {
             <td>{{ row['type_name'] }}</td>
             <td>{{ row['quantity'] }}</td>
             <td class="num">{{ row['best_price'] | format_number }}</td>
+            <td class="num">{{ row['best_price_volume'] | format_number }}</td>
             <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == 'Dodixie' %} class="green" {% elif row['best_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
             <td class="num">{{ row['t_price_jita'] | format_number }}</td>
             <td class="num">{{ row['t_price_amarr'] | format_number }}</td>
