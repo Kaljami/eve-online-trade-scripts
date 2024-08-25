@@ -180,6 +180,7 @@ window.addEventListener('load', function () {
     <h1>Multi-appraisal alpha</h1>
     <div class="table_container centered">
         <p>Showing the {{price_type}} {{order_type}} orders as best</p>
+        <p>Highlighed volume means daily volume is at least twice the appraised quantity</p>
     <table border="1" id="result_table" class="sortable">
         <thead>
         <tr>
@@ -198,9 +199,9 @@ window.addEventListener('load', function () {
         {% for index, row in result.iterrows() %}
         <tr>
             <td>{{ row['type_name'] }}</td>
-            <td>{{ row['quantity'] }}</td>
+            <td class="num">{{ row['quantity'] | format_number }}</td>
             <td class="num">{{ row['best_price'] | format_number }}</td>
-            <td class="num">{{ row['best_price_volume'] | format_number }}</td>
+            <td {% if row['best_price_volume'] > row['quantity']*2 %} class="green"{% endif %}>{{ row['best_price_volume'] | format_number }}</td>
             <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == 'Dodixie' %} class="green" {% elif row['best_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
             <td class="num">{{ row['t_price_jita'] | format_number }}</td>
             <td class="num">{{ row['t_price_amarr'] | format_number }}</td>
