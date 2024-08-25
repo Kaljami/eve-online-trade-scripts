@@ -65,7 +65,11 @@ def filter_contracts():
     selected_region = request.form['selected_region']
     min_profit = request.form['min_profit']
     max_volume = request.form['max_volume']
-    ignore_all_blueprints = request.form['all_blueprints']
+    #if request.form['all_blueprints']: 
+    if request.form.get('all_blueprints'): 
+        ignore_all_blueprints = request.form['all_blueprints']
+    else: 
+        ignore_all_blueprints = False
 
     query_filter_options = []
 

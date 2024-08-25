@@ -94,6 +94,10 @@ li {
     color: rgb(223 0 0);
     text-shadow: 0px 0 3px #4b4b4b;
 }
+.green {
+    color: rgb(83, 148, 92);
+    text-shadow: 0px 0 3px #4b4b4b;
+}
 .centered {
     margin: auto;
     width: 80%;

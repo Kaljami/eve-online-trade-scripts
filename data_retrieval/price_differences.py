@@ -1,6 +1,7 @@
 import pandas as pd
 
 import data_retrieval.order_data as order_data
+from data_retrieval.order_data import get_volume_price_history
 import data_retrieval.historical_data as historical_data
 import data_processing.render as render
 from data_processing.sde_utils import get_item_names, get_item_sizes
@@ -43,46 +44,6 @@ def get_ungrouped_prices_from_station(station_name, order_type, cached, sso_sess
     return result_df
     
 
-
-def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Series]:
-    """Get historical data for each given typeID"""
-
-    idx = pd.IndexSlice
-
-    print(f'Loading market history in {station_name} for {len(typeIDs)} items...')
-    history_json = historical_data.get_all_history(station_name, typeIDs, cached=cached)
-    print('Success!')
-
-    print(f'Processing history content into dataframe...')
-    typeID_history_dict = {
-        typeID: pd.DataFrame.from_records(data, index=['date'])
-        for typeID, data
-        in history_json.items()
-    }
-
-    historical_df = pd.concat(typeID_history_dict, axis=1).T
-    #print(historical_df)
-    if 'date' in historical_df.columns:
-        historical_df = historical_df.drop('date', axis='columns')
-    historical_df.columns = pd.to_datetime(historical_df.columns, yearfirst=True)
-    print('Done!')
-
-    print(f'Pulling out historical volume data for {days} days...')
-    v = historical_df.loc[idx[:, 'volume'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
-    v = v.fillna(0).mean(axis=1)
-    """ FYI TODO
-    FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
-    v = v.fillna(0).mean(axis=1)
-    """
-    v = v.droplevel(1, axis=0)
-
-    print(f'Pulling out historical price data for {days} days...')
-    p = historical_df.loc[idx[:, 'average'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
-    p = p.mean(axis=1)
-    p = p.droplevel(1, axis=0)
-
-    print('Done!')
-    return v, p
 
 
 ### TODO: 

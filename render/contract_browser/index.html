@@ -232,13 +232,13 @@ window.addEventListener('load', function () {
         <tr>
             <td>
                 <button type="button" class="btn btn-link" onclick="openContract('{{ row['contract_id'] }}')">{{ row['contract_id'] }}</button>
+            <!-- for some reason this works with the validation error -->
             </td>
             <!-- <td>
               <form action="{{ url_for('open_contract', contract_id=row['contract_id']) }}" method="get">
                   <button type="submit" class="btn btn-link">{{ row['contract_id'] }}</button>
               </form>
           </td> -->
-            <!-- for some reason this works with validation error -->
             <td class="num">{{ row['price'] | format_number }}</td>
             <!-- <td>{{ row['start_location_id'] }}</td> -->
             <td class="num">{{ row['jita_buy_value'] | format_number }}</td>
