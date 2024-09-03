@@ -275,8 +275,6 @@ def update_caches(force=False):
 # TODO maybe automate downloading new SDE versions from https://www.fuzzwork.co.uk/dump/latest/
 def update_blueprint_values():
 
-    # TODO add option to ignore blueprint categories. Or maybe do it when querying elsewhere. 
-
     prices_dataframe_sell = get_prices_from_station('Jita','sell', True)
     prices_dataframe_buy = get_prices_from_station('Jita','buy', True)
 
