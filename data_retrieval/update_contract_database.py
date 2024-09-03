@@ -1,15 +1,10 @@
+# Download latest contracts from everef, extract, compare the contract_id's to ones in database and set everything else to finished
 import os
 import requests
+import tarfile
 import pandas as pd
-from sqlalchemy import create_engine, inspect, text
-from tqdm import tqdm
-from datetime import datetime, timezone, timedelta
-from time import sleep
+import mysql.connector
 from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-
-
-### SETTINGS BEGIN
 
 load_dotenv()
 # MySQL Database:
@@ -18,79 +13,74 @@ db_password = os.getenv("mysql_password")
 db_host = os.getenv("mysql_host")
 db_database = os.getenv("mysql_database")
 
-### SETTINGS END
+def update_contract_status():
+    url = "https://data.everef.net/public-contracts/public-contracts-latest.v2.tar.bz2"
+    file_name = "public-contracts-latest.v2.tar.bz2"
 
-load_dotenv()
-engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
+    print(f"Downloading {file_name}...")
+    response = requests.get(url, stream=True)
+    with open(file_name, "wb") as file:
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                file.write(chunk)
 
+    # Extract the bz2 file
+    extracted_dir = "latest_contracts"
 
-def check_contract_status(contract_id, date_expired):
-    if current_timestamp > date_expired: 
-        return False # Contract has already expired 
-    contract_items_url = f'https://esi.evetech.net/latest/contracts/public/items/{contract_id}/'
-    res = requests.get(contract_items_url)
-    #error_limit = int(res.headers.get('X-Esi-Error-Limit-Remain'))
-    error_limit = res.headers.get('X-Esi-Error-Limit-Remain')
-    limit_reset_seconds = res.headers.get('X-Esi-Error-Limit-Reset')
-    contract_expires = pd.to_datetime(res.headers.get('Expires'), utc=True)
-    #print(f"headers: {res.headers}")
-    #print(f"Status: {res.status_code}. Error limit remaining: {error_limit}. Error limit resets in {limit_reset_seconds} seconds")
-    try: 
-        if res.status_code == 200:
-            return True # Contract is still active
-        if int(error_limit) < 20:
-            print(f"ESI error_limit at {error_limit}. Chilling for 5 seconds. Limit will reset in {limit_reset_seconds} seconds.")
-            sleep(5)
-        elif 20 < int(error_limit) < 50:
-            print(f"ESI error_limit at {error_limit}. Chilling for 1 second. Limit will reset in {limit_reset_seconds} seconds.")
-            sleep(1)
-        if res.status_code == 403 or res.status_code == 404: # Contract has been deleted or otherwise is not accessible
-            return False
-        if contract_expires-timedelta(hours=1) < current_timestamp: # If there is less than an hour until contract expires
-            return False # Contract has been deleted by the creator and will be removed from esi within an hour 
-        else: 
-            return False # Something weird has happened
-    except Exception as e:
-        print(f"Error while running check_contract_status() for contract {contract_id}. Error: {e}\nType of error_limit: {type(error_limit)} \nESI http headers: {res.status_code}, {res.headers}")
-        sleep(5)
+    if not os.path.exists(extracted_dir):
+        os.mkdir(extracted_dir)
+    print(f"Extracting {file_name}...")
+    with tarfile.open(file_name, "r:bz2") as tar:
+        tar.extractall(path=extracted_dir)
 
-current_timestamp = datetime.now(timezone.utc)
-    
-def update_existing_contracts():
-    conn = engine.connect()
-    active_contracts = []
-    expired_contracts = []
-    existing_contract_ids_query = "SELECT contract_id, date_expired FROM contracts WHERE status='active';"
-    existing_contract_ids_df = pd.read_sql_query(existing_contract_ids_query, con=engine)
-    existing_contract_ids_df.set_index('contract_id', inplace = True)
+    # Load the contracts.csv file into a pandas DataFrame
+    csv_file_path = os.path.join(extracted_dir, "contracts.csv")
 
-    batch_size = 200
-    batch_counter = 0
-    total_expired = 0
-    total_active = 0
-
-    for contract_id in tqdm(existing_contract_ids_df.index, desc="Processing Contracts", unit="contracts", total=len(existing_contract_ids_df.index), maxinterval=2):
-        if batch_counter >= batch_size:
-            print(f"Batch counter is at {batch_counter}")
-            # Save the status of the processed contracts
-            expired_contracts_str = ', '.join(map(str, expired_contracts))
-            conn.execute(text(f"UPDATE contracts SET status='expired' WHERE contract_id IN ({expired_contracts_str});"))
-            expired_contracts.clear()
-            batch_counter = 0
-
-        date_expired = pd.to_datetime(existing_contract_ids_df.loc[contract_id,  'date_expired'], utc=True)
-        if check_contract_status(contract_id, date_expired) == False:
-            expired_contracts.append(contract_id)
-            batch_counter += 1
-            total_expired += 1
-        else:
-            active_contracts.append(contract_id)
-            total_active += 1
-
-    # Save the status of the remaining contracts
-    conn.execute(text(f"UPDATE contracts SET status='expired' WHERE contract_id IN ({expired_contracts_str});"), expired_contracts=list(expired_contracts))
-
-    print(f"Check finished. {total_expired} contracts have expired or finished since last check. {total_active} remain active.")
+    if os.path.exists(csv_file_path):
+        print(f"Loading {csv_file_path} into a DataFrame...")
+        df = pd.read_csv(csv_file_path)
+        print("DataFrame loaded successfully.")
+    else:
+        raise FileNotFoundError(f"{csv_file_path} does not exist.")
 
 
-update_existing_contracts()
+    db_connection = mysql.connector.connect(
+        host=db_host,
+        user=db_user,
+        password=db_password,
+        database=db_database
+    )
+
+    cursor = db_connection.cursor()
+
+    # Create a temporary table to hold the new contract IDs
+    temp_table_query = """
+    CREATE TEMPORARY TABLE temp_contract_ids (
+        contract_id BIGINT PRIMARY KEY
+    )
+    """
+    cursor.execute(temp_table_query)
+
+    # Insert contract IDs from the downloaded DataFrame into the temporary table
+    temp_insert_query = "INSERT INTO temp_contract_ids (contract_id) VALUES (%s)"
+    cursor.executemany(temp_insert_query, [(cid,) for cid in df['contract_id']])
+    db_connection.commit()
+
+
+    # Update the status in the main contracts table for IDs not in the temp table
+    update_query = """
+    UPDATE contracts
+    SET status = 'expired'
+    WHERE contract_id NOT IN (SELECT contract_id FROM temp_contract_ids)
+    """
+    cursor.execute(update_query)
+    db_connection.commit()
+
+    print(f"Updated {cursor.rowcount} rows to 'expired' status.")
+
+    # Drop the temporary table
+    cursor.execute("DROP TEMPORARY TABLE IF EXISTS temp_contract_ids")
+
+    # Close the database connection
+    cursor.close()
+    db_connection.close()

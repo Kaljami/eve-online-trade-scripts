@@ -12,6 +12,7 @@ from tqdm import tqdm
 from datetime import datetime, timezone, timedelta
 from data_retrieval.sso_utils import temp_test_oauth_session
 from data_processing.sde_utils import get_item_names
+from data_retrieval.update_contract_database import update_contract_status
 import logging
 import data_retrieval.historical_data as historical_data
 
@@ -260,6 +261,7 @@ def update_caches(force=False):
         update_metadata(prices=True)
         update_appraisal_prices()
         update_metadata(appraisal_prices=True)
+        update_contract_status() # todo give this a separate update frequency
     else:
         print(f"it's been {time_since_prices} since prices were updated")
 
