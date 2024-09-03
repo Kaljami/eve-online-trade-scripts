@@ -148,6 +148,7 @@ def process_data():
         user_df = pd.DataFrame({'type_name': type_names, 'quantity': quantities})
     else:
         # Handle unsupported data formats or provide an error message
+        # TODO handle data format automatically and provide user with error messages
         return "Unsupported data format"
 
     
