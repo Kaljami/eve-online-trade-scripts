@@ -60,7 +60,7 @@ def get_ungrouped_prices_from_station(station_name, order_type, cached, sso_sess
     # Convert to DF
     df = pd.DataFrame.from_records(orders_json)
     result_df = df.copy()
-    print (str(result_df))
+    #sprint (str(result_df))
     return result_df
 
 def get_num_pages(region_id, order_type, sso_session):

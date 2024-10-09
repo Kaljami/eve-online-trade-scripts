@@ -6,6 +6,7 @@ import mysql.connector
 import sqlparse
 
 # Here we download copies of the EVE Static Data Export kindly formatted to SQL dumps by FuzzySteve and import them to a database
+# Todo save the metadata and download if newer is available
 
 load_dotenv()
 mysql_user = os.getenv("mysql_user")
@@ -25,7 +26,14 @@ url_list = [
     'https://www.fuzzwork.co.uk/dump/latest/invGroups.sql.bz2',
     'https://www.fuzzwork.co.uk/dump/latest/invMarketGroups.sql.bz2',
     'https://www.fuzzwork.co.uk/dump/latest/mapSolarSystems.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/mapRegions.sql.bz2'
+    'https://www.fuzzwork.co.uk/dump/latest/mapRegions.sql.bz2',
+    # dogma attributes:
+    'https://www.fuzzwork.co.uk/dump/latest/dgmTypeEffects.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/dgmTypeAttributes.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/dgmExpressions.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/dgmEffects.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/dgmAttributeTypes.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/latest/dgmAttributeCategories.sql.bz2'
     ]
 
 def import_sql_dump(dump_file):

@@ -70,7 +70,7 @@ def price_differences(settings, sso_session):
     ungrouped_source_prices = get_ungrouped_prices_from_station(settings.source_hub, settings.source_order_type, settings.cache_all, sso_session)
     ungrouped_dest_prices = get_ungrouped_prices_from_station(settings.dest_hub, settings.dest_order_type, settings.cache_all, sso_session)
 
-    # Sell-side costs: Broker fees (~3.5%), Sales tax (~2.25%), Hauling fees (~2%).
+    # Sell-side costs: Broker fees (~3.5%), Sales tax (~2.25%), Hauling fees (~2%). Probably out of date already.
     dest_prices_taxed = dest_prices * ((1 - 0.035 - 0.0225) * (1 - 0.02))
 
     # Series back into output DF columns
@@ -145,7 +145,7 @@ def price_differences(settings, sso_session):
 
     # Finally, calculate expected profit per item by multiplying unit profit by mean daily volume or number of available units, whichever is lower
     if settings.dest_order_type == 'sell':
-        summary['Units to sell'] = summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1)
+        summary['Units to sell'] = summary.apply(lambda row: min(row['Units available'], row['Daily Volume']), axis=1) # set units to sell to whichever is lower, number available or number moving daily
         summary['Total Profit'] = summary['Profit'] * summary['Units to sell']
     if settings.dest_order_type == 'buy':
         summary['Units to sell'] = summary.apply(lambda row: min(row['Units available'], row['Units on buy orders']), axis=1)

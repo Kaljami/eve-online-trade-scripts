@@ -78,7 +78,13 @@ def get_region_ids():
 def get_system_ids():
     system_ids = load_from_redis('system_ids')
     return system_ids
-get_system_ids()
+
+def get_bounty_prizes():
+    query = f'SELECT typeID, attributeID, valueFloat FROM dgmTypeAttributes WHERE attributeID = 481;'
+    engine = db_connection(fuzz=True)
+    df = pd.read_sql_query(query, con=engine)
+    dict_df = df.set_index('typeID').to_dict()['valueFloat']
+    return dict_df
 
 def generate_packaged_volumes(): # TODO update to read from database
     try:
