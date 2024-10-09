@@ -37,11 +37,18 @@ def redis_connection():
 
 def get_prices_from_station(station_name, order_type, cached, sso_session=None) -> pd.Series:
     # Get orders as JSON
-    print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}...')
-    orders_json = get_all_orders(station_name, order_type, cached, sso_session)
-    #print ("get_prices_from_station says: orders_json:",str(orders_json))
-    # This sometimes fails for unknown reason. 
-    print(f'Got {len(orders_json)} orders!')
+    load_attempts = 0
+    while load_attempts < 10: 
+        print(f'Loading {order_type} orders from {station_name} using {"cached data" if cached else "ESI"}. Attempt {load_attempts+1}...')
+        orders_json = get_all_orders(station_name, order_type, cached, sso_session)
+        #print ("get_prices_from_station says: orders_json:",str(orders_json))
+        # This sometimes fails for unknown reason. 
+        try:
+            print(f'Got {len(orders_json)} orders!')
+            break
+        except Exception as e:
+            print(f"Loading prices from station {station_name} failed. Error:\n {e}")
+            load_attempts += 1
 
     # Convert to DF and find the best price for each typeID
     df = pd.DataFrame.from_records(orders_json)
@@ -124,7 +131,11 @@ def get_all_orders(system_name, order_type, cached, sso_session):
         return get_orders_from_cache(system_name, order_type)
     else:
         all_orders = get_all_orders_concurrent(system_name, order_type, sso_session)
-        save_orders_to_cache(system_name, all_orders, order_type)
+        try:
+            if len(all_orders) > 1: # don't save to redis if getting prices was unsuccessful. This might fail because of type error...
+                save_orders_to_cache(system_name, all_orders, order_type)
+        except:
+            print(f"Looks like getting {system_name} {order_type} orders failed. Not saving to Redis. ")
         return all_orders
 
 
@@ -246,22 +257,30 @@ def update_caches(force=False):
     sso_file = os.getenv("default_character_session_file")
     time_since_prices = check_metadata('prices')
     if time_since_prices > timedelta(hours=2) or force == True:
-        print("it's time to update prices!")
-        logging.info("Starting to update price caches")
-        sso_session = temp_test_oauth_session(sso_file)
-        locations = ['Jita', 'Amarr', '1DQ1-A', 'Dodixie']
-        types = ['buy', 'sell']
+        #this might need some more thought on error handling
+        try:
+            print("it's time to update prices!")
+            logging.info("Starting to update price caches")
+            sso_session = temp_test_oauth_session(sso_file)
+            locations = ['Jita', 'Amarr', '1DQ1-A', 'Dodixie']
+            types = ['buy', 'sell']
 
-        for location in locations:
-            for order_type in types:
-                print(f"Loading prices from location: {location}, Type: {order_type}")
-                logging.info(f"Loading prices from location: {location}, Type: {order_type}")
-                get_all_orders(location, order_type, False, sso_session)
-        get_average_prices(False)
-        update_metadata(prices=True)
-        update_appraisal_prices()
-        update_metadata(appraisal_prices=True)
-        update_contract_status() # todo give this a separate update frequency
+            for location in locations:
+                try:
+                    for order_type in types:
+                        print(f"Loading prices from location: {location}, Type: {order_type}")
+                        logging.info(f"Loading prices from location: {location}, Type: {order_type}")
+                        get_all_orders(location, order_type, False, sso_session)
+                except Exception as e:
+                    logging.error(f"Loading prices from location: {location}, Type: {order_type}")
+            get_average_prices(False)
+            update_metadata(prices=True)
+            update_appraisal_prices()
+            update_metadata(appraisal_prices=True)
+            update_contract_status() # todo give this a separate update frequency
+        except Exception as e:
+            print(f"Error while running the cache update (in order_data.py): \n {e}")
+            logging.error(f"Error while running the cache update (in order_data.py): \n {e}")
     else:
         print(f"it's been {time_since_prices} since prices were updated")
 

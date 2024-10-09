@@ -69,9 +69,18 @@ def increase_price(input_number):
 # Primary function here. Goes through market orders and compares the prices to esi data (cached data if available.)
 def update_all(settings, session, character_id):
     character_orders_url = f'https://esi.evetech.net/latest/characters/{character_id}/orders/'
-    character_orders_response = session.get(character_orders_url)
-    character_orders_data = character_orders_response.json()
-    #print ("current player sell orders from ESI:",sell_orders_data) 
+    try_count = 0
+    while try_count < 10: 
+        character_orders_response = session.get(character_orders_url)
+        try:
+            if character_orders_response.status_code is not 200:
+                print(f"character_orders_response status is {character_orders_response.status_code}, all good here.")
+                break
+        except:
+            print(f"Getting character orders failed with response {character_orders_response.json()}, retrying...")
+            try_count += 1
+        character_orders_data = character_orders_response.json()
+    print ("current player sell orders from ESI:", character_orders_data) 
 
     # Convert the orders data to a DataFrame
     sell_orders = pd.DataFrame(character_orders_data)
