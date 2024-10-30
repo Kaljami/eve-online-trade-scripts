@@ -72,14 +72,16 @@ def update_all(settings, session, character_id):
     try_count = 0
     while try_count < 10: 
         character_orders_response = session.get(character_orders_url)
+        print(f"character_orders_response status is {character_orders_response.status_code}")
+        print(f"{character_orders_response.json()}")
         try:
-            if character_orders_response.status_code is not 200:
+            if character_orders_response.status_code is 200 or character_orders_response.status_code is 202:
                 print(f"character_orders_response status is {character_orders_response.status_code}, all good here.")
                 break
         except:
             print(f"Getting character orders failed with response {character_orders_response.json()}, retrying...")
             try_count += 1
-        character_orders_data = character_orders_response.json()
+    character_orders_data = character_orders_response.json()
     print ("current player sell orders from ESI:", character_orders_data) 
 
     # Convert the orders data to a DataFrame
