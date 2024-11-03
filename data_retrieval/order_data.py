@@ -73,7 +73,7 @@ def get_ungrouped_prices_from_station(station_name, order_type, cached, sso_sess
 def get_num_pages(region_id, order_type, sso_session):
     params = {'order_type': order_type}
     
-    if region_id == 10000060:
+    if region_id == 10000060: # TODO move to separate citadel version 
         structure_id = 1030049082711
         orders_url = f'https://esi.evetech.net/latest/markets/structures/{structure_id}/'
         if sso_session == None:
@@ -82,6 +82,20 @@ def get_num_pages(region_id, order_type, sso_session):
     else:
         orders_url = f'https://esi.evetech.net/latest/markets/{region_id}/orders/'
         res = requests.get(orders_url, params=params)
+
+    #print('request url: ' + res)
+    #print(f"Json: {res.json()} Headers: {res.headers}")
+    #print("pages:",int(res.headers['X-Pages']))
+
+    return int(res.headers['X-Pages'])
+
+def get_num_pages_citadel(structure_id, order_type, sso_session):
+    params = {'order_type': order_type}
+    
+    orders_url = f'https://esi.evetech.net/latest/markets/structures/{structure_id}/'
+    if sso_session == None:
+        raise Exception("Must authenticate with SSO to access market on player structures. Log in with option 6.")
+    res = sso_session.get(orders_url, params=params)
 
     #print('request url: ' + res)
     #print(f"Json: {res.json()} Headers: {res.headers}")
@@ -142,6 +156,7 @@ def get_all_orders(system_name, order_type, cached, sso_session):
 
 def get_all_orders_concurrent(system_name, order_type, sso_session):
     #Master function to control async loop and process results
+    sso_file = os.getenv("default_character_session_file")
 
     names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ1-A': 10000060}
     names_to_stn = {'Amarr': 60008494, 'Jita': 60003760, 'Dodixie': 60011866, 'Rens': 60004588, 'Hek': 60005686, '1DQ1-A': 1030049082711}
@@ -159,6 +174,34 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
             buy_orders = [order for order in all_orders if order["is_buy_order"]]
             return buy_orders
         
+    if region_id == 10000002: # In The Forge, get prices from Jita + Perimeter citadels
+        sso_session = temp_test_oauth_session(sso_file)
+        perimeter_citadels = [1044752365771]
+        all_orders = []
+        for citadel in perimeter_citadels:
+            pages = get_num_pages_citadel(citadel, order_type, sso_session)
+            citadel_orders = citadel_get_all_orders(citadel, pages, order_type, sso_session)
+            #print("citadel_orders:\n", type(citadel_orders[0])) # TODO need to find a way to append citadel prices and Jita station orders together
+            all_orders = all_orders + citadel_orders
+            print(f"Orders from citadel {citadel} added to Jita orders")
+        loop = asyncio.get_event_loop()
+        pages = get_num_pages(region_id, order_type, sso_session)
+        try:
+            if order_type == "sell":
+                sell_orders_jita = loop.run_until_complete(async_get_all_orders(region_id, pages, order_type))
+                output_jita = [order for page in sell_orders_jita for order in page if order.get('location_id', 0) == station_id]
+                all_orders = all_orders + output_jita
+                return all_orders
+            
+            if order_type == "buy":
+                buy_orders_jita = loop.run_until_complete(async_get_all_orders(region_id, pages, order_type))
+                output_jita = [order for page in buy_orders_jita for order in page if order.get('location_id', 0) == station_id]
+                all_orders = all_orders + output_jita
+                return all_orders
+        except Exception as e:
+            print (e)
+
+
     else:
         loop = asyncio.get_event_loop()
         try:
@@ -443,6 +486,7 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
 
     print(f'Pulling out historical volume data for {days} days...')
     v = historical_df.loc[idx[:, 'volume'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
+    #print(v)
     v = v.fillna(0).mean(axis=1)
     """ FYI TODO
     FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
