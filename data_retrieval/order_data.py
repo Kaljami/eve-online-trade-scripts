@@ -499,5 +499,10 @@ def get_volume_price_history(station_name, typeIDs, days, cached) -> tuple[pd.Se
     p = p.mean(axis=1)
     p = p.droplevel(1, axis=0)
 
+    print(f'Pulling out historical order count data for {days} days...')
+    order_count = historical_df.loc[idx[:, 'order_count'], historical_df.columns > (pd.Timestamp('today').floor('D') - pd.offsets.Day(int(days)))]
+    order_count = order_count.mean(axis=1)
+    order_count = order_count.droplevel(1, axis=0)
+
     print('Done!')
-    return v, p
+    return v, p, order_count
