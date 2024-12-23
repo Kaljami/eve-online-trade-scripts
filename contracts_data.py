@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import aiohttp
 import asyncio
@@ -7,6 +8,7 @@ import nest_asyncio
 from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.order_data import get_prices_from_station, get_average_prices, update_caches, redis_connection
+from data_retrieval.update_expired_contracts import update_expired_contracts
 from data_processing.types_in_group import get_rig_type_ids, get_all_blueprint_type_ids
 from data_processing.sde_utils import get_item_names
 from datetime import datetime, timezone
@@ -21,6 +23,8 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import warnings
 from functools import reduce
 import fnmatch
+import tarfile
+import mysql.connector
 
 ### SETTINGS BEGIN
 
@@ -33,7 +37,7 @@ db_database = os.getenv("mysql_database")
 db_database_fuzz = os.getenv("mysql_database_fuzzworks")
 
 # Contracts: 
-regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor"]
+regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor", "Metropolis"]
 minimum_profit_percentage = 30
 good_profit_percentage = 40
 minimum_profit_absolute = 80000000 # 80 million
@@ -512,6 +516,38 @@ async def really_send_embed():
 
     logging.info(f"{n_good_profit_margin} of the contracts had profit margin above {minimum_profit_percentage}% and buy value above {minimum_profit_absolute} ISK")
 
+def save_dataframe_to_db(df, table_name, engine, region_name):
+    """
+    Saves a dataframe to the database with retry logic and connection handling
+    """
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Create a new connection for this operation
+            with engine.connect() as connection:
+                # Begin a transaction
+                with connection.begin():
+                    df.to_sql(table_name, con=connection, if_exists='append', index=False)
+                    logging.info(f"Dataframe of {region_name} {table_name} saved to database")
+                    return True
+                    
+        except Exception as e:
+            retry_count += 1
+            error_msg = f"Attempt {retry_count}: Error saving {region_name} {table_name} to database: {str(e)}"
+            print(error_msg)
+            logging.warning(error_msg)
+            
+            if retry_count == max_retries:
+                error_msg = f"Failed to save {region_name} {table_name} after {max_retries} attempts. Error: {str(e)}"
+                print(error_msg)
+                logging.error(error_msg)
+                return False
+                
+            # Wait before retrying, with exponential backoff
+            time.sleep(2 ** retry_count)
+
 async def main():
     await really_send_embed()
 
@@ -534,36 +570,11 @@ current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 for region in regions:
     ie_contracts_df, region_items_df = get_all_contracts_from_region(region, False)
     ie_contracts_df['date_discovered'] = current_timestamp # uses local time
-    try:
-        ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
-        logging.info(f"Dataframe of {region} contracts saved to database")
-    except Exception as e:
-        print(e)
-        print(f"Saving {region} contracts to database failed. Trying again.")
-        logging.warning(f"Saving {region} contracts to database failed. Trying again.: {e}")
-        try:
-            ie_contracts_df.to_sql('contracts', con=engine, if_exists='append', index=False)
-            print("New contracts saved to database!")
-            logging.info(f"Dataframe of {region} contracts saved to database")
-        except Exception as e:
-            print(e)
-            print(f"Saving {region} contracts to database failed again. Skipping.")
-            logging.error(f"Saving {region} contracts to database failed again. Skipping. {e}")
-    try:
-        region_items_df.to_sql('contract_items', con=engine, if_exists='append', index=False)
-        logging.info(f"Dataframe of {region} items saved to database")
-    except Exception as e:
-        print(e)
-        print(f"Saving {region} items to database failed. Trying again.")
-        logging.warning(f"Saving {region} items to database failed. Trying again.: {e}")
-        try:
-            region_items_df.to_sql('contract_items', con=engine, if_exists='append', index=False)
-            print("New items saved to database!")
-            logging.info(f"Dataframe of {region} items saved to database")
-        except Exception as e:
-            print(e)
-            print(f"Saving {region} items to database failed again. Skipping.")
-            logging.error(f"Saving {region} items to database failed again. Skipping. {e}")
+    # Save contracts
+    if save_dataframe_to_db(ie_contracts_df, 'contracts', engine, region):
+        # Only try to save items if contracts were saved successfully
+        if len(region_items_df) > 0:  # Check if there are items to save
+            save_dataframe_to_db(region_items_df, 'contract_items', engine, region)
             
 print("All selected regions checked and new contracts saved to database")
 
@@ -590,5 +601,7 @@ print(f"This run found {n_new_profitable_contracts} new contracts priced below J
 #print(result_df)
 
 asyncio.run(main())
+
+update_expired_contracts()
 
 logging.info(f"Script finished successfully.")

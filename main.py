@@ -2,7 +2,7 @@ from ast import literal_eval
 import webbrowser
 
 import data_retrieval.price_differences as price_differences
-import data_retrieval.station_price_differences as station_price_differences
+#import data_retrieval.station_price_differences as station_price_differences
 import data_retrieval.order_update as order_update
 import settings
 import data_retrieval.sso_utils as sso_utils
@@ -43,9 +43,9 @@ def start_regional():
     url = price_differences.price_differences(settings.settings, sso_session)
     webbrowser.open(url)
 
-def start_station():
-    url = station_price_differences.price_differences(settings.settings)
-    webbrowser.open(url)
+#def start_station():
+#    url = station_price_differences.price_differences(settings.settings)
+#    webbrowser.open(url)
 
 def start_update():
     global character_id
@@ -122,7 +122,7 @@ def start_settings():
 
 menu_choices = {
     1: ('Regional Trading Calculator', start_regional),
-    2: ('Station Trading Calculator', start_station),
+    #2: ('Station Trading Calculator', start_station),
     3: ('Fast Order Update', start_update),
     5: ('Log in new character', new_login),
     6: ('Cycle SSO characters', cycle_sso),

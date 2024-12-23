@@ -176,26 +176,29 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
         
     if region_id == 10000002: # In The Forge, get prices from Jita + Perimeter citadels
         sso_session = temp_test_oauth_session(sso_file)
-        perimeter_citadels = [1044752365771]
+        perimeter_citadels = [1044752365771,1042499803831,1042508032148] # structure ID's to look for market orders. 
         all_orders = []
         for citadel in perimeter_citadels:
             pages = get_num_pages_citadel(citadel, order_type, sso_session)
             citadel_orders = citadel_get_all_orders(citadel, pages, order_type, sso_session)
-            #print("citadel_orders:\n", type(citadel_orders[0])) # TODO need to find a way to append citadel prices and Jita station orders together
-            all_orders = all_orders + citadel_orders
+            if order_type == "sell":
+                citadel_orders_filtered = [order for order in citadel_orders if not order["is_buy_order"]]
+            if order_type == "buy":
+                citadel_orders_filtered = [order for order in citadel_orders if order["is_buy_order"]]
+            all_orders = all_orders + citadel_orders_filtered
             print(f"Orders from citadel {citadel} added to Jita orders")
         loop = asyncio.get_event_loop()
         pages = get_num_pages(region_id, order_type, sso_session)
         try:
             if order_type == "sell":
                 sell_orders_jita = loop.run_until_complete(async_get_all_orders(region_id, pages, order_type))
-                output_jita = [order for page in sell_orders_jita for order in page if order.get('location_id', 0) == station_id]
+                output_jita = [order for page in sell_orders_jita for order in page if order.get('location_id', 0) == station_id] # TODO this should not be necessary
                 all_orders = all_orders + output_jita
                 return all_orders
             
             if order_type == "buy":
                 buy_orders_jita = loop.run_until_complete(async_get_all_orders(region_id, pages, order_type))
-                output_jita = [order for page in buy_orders_jita for order in page if order.get('location_id', 0) == station_id]
+                output_jita = [order for page in buy_orders_jita for order in page if order.get('location_id', 0) == station_id] # TODO this should not be necessary
                 all_orders = all_orders + output_jita
                 return all_orders
         except Exception as e:
@@ -315,7 +318,7 @@ def update_caches(force=False):
                         logging.info(f"Loading prices from location: {location}, Type: {order_type}")
                         get_all_orders(location, order_type, False, sso_session)
                 except Exception as e:
-                    logging.error(f"Loading prices from location: {location}, Type: {order_type}")
+                    logging.error(f"Failed loading prices from location: {location}, Type: {order_type}. Error: {e}")
             get_average_prices(False)
             update_metadata(prices=True)
             update_appraisal_prices()

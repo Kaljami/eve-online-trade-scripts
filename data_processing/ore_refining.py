@@ -1,6 +1,15 @@
 import pandas as pd
 import yaml
 import json
+import os
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+
+load_dotenv()
+db_user = os.getenv("mysql_user")
+db_password = os.getenv("mysql_password")
+db_host = os.getenv("mysql_host")
+db_database = os.getenv("mysql_database")
 
 def get_asteroid_groups():
     with open('static/groupIDs.yaml', 'r', encoding='utf-8') as file:
@@ -75,7 +84,7 @@ def generate_refined_values(prices_dataframe):
     df = df.merge(prices_dataframe, left_on='materialTypeID', right_index=True)
 
     # Calculate reprocessed_value
-    df['reprocessed_value'] = df['quantity'] * df['jita_price']
+    df['reprocessed_value'] = df['quantity'] * df['price']
     df['reprocessed_value'] = df['reprocessed_value'] / df['portionSize']
     def adjust_reprocessed_value(row):
         if row['groupID'] in asteroid_groups:
@@ -93,14 +102,9 @@ def generate_refined_values(prices_dataframe):
     name_df = df[['type_id', 'name']].drop_duplicates()
     reprocessed_value_df = pd.merge(reprocessed_value_df, name_df, on='type_id')
 
-    from sqlalchemy import create_engine
-    db_user = None
-    db_password = None
-    db_host = None
-    db_database = None
 
     engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
     reprocessed_value_df.to_sql('refined_value', con=engine, if_exists='replace', index=False)
 
 
-generate_refined_values()
+#generate_refined_values()
