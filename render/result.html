@@ -192,7 +192,7 @@ window.addEventListener('load', function () {
             <th class="num" aria-sort="ascending"><button>Jita<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>Amarr<span aria-hidden="true"></span></button></th>
             <th class="num" aria-sort="ascending"><button>Dodixie<span aria-hidden="true"></span></button></th>
-            <th class="num" aria-sort="ascending"><button>1DQ1-A<span aria-hidden="true"></span></button></th>
+            <th class="num" aria-sort="ascending"><button>Tenerifis<span aria-hidden="true"></span></button></th>
         </tr>
         </thead>
         <tbody>
@@ -202,12 +202,11 @@ window.addEventListener('load', function () {
             <td class="num">{{ row['quantity'] | format_number }}</td>
             <td class="num">{{ row['best_price'] | format_number }}</td>
             <td {% if row['best_price_volume'] > row['quantity']*2 %} class="green"{% endif %}>{{ row['best_price_volume'] | format_number }}</td>
-            <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == 'Dodixie' %} class="green" {% elif row['best_price_location'] == '1DQ1-A' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
+            <td {% if row['best_price_location'] == 'Jita' %} class="blue" {% elif row['best_price_location'] == 'Amarr' %} class="yellow" {% elif row['best_price_location'] == 'Dodixie' %} class="green" {% elif row['best_price_location'] == 'Tenerifis' %} class="red"{% endif %}>{{ row['best_price_location'] }}</td>
             <td class="num">{{ row['t_price_jita'] | format_number }}</td>
             <td class="num">{{ row['t_price_amarr'] | format_number }}</td>
             <td class="num">{{ row['t_price_dodixie'] | format_number }}</td>
-            <td class="num">{{ row['t_price_delve'] | format_number }}</td>
-            <!-- Add more columns as needed -->
+            <td class="num">{{ row['t_price_tenerifis'] | format_number }}</td>
         </tr>
         {% endfor %}
         </tbody>
@@ -219,7 +218,7 @@ window.addEventListener('load', function () {
         <li>Total at Jita: {{ total_jita }}</li>
         <li>Total at Amarr: {{ total_amarr }}</li>
         <li>Total at Dodixie: {{ total_dodixie }}</li>
-        <li>Total at 1DQ1-A: {{ total_delve }}</li>
+        <li>Total at Tenerifis: {{ total_tenerifis }}</li>
     </ul>
 </body>
 </html>

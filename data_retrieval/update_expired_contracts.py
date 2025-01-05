@@ -74,7 +74,7 @@ def update_expired_contracts():
         status = 'expired',
         date_expired = CURRENT_TIMESTAMP()
     WHERE contract_id NOT IN (SELECT contract_id FROM temp_contract_ids)
-
+    AND status != 'expired'
     """
     cursor.execute(update_query)
     db_connection.commit()

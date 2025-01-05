@@ -2,7 +2,7 @@ from flask import Flask, render_template, request
 import pandas as pd
 from io import StringIO
 from data_processing.sde_utils import get_item_names
-from data_retrieval.order_data import get_prices_from_station
+from data_retrieval.order_data import get_prices_from_station, update_appraisal_prices
 import numpy as np
 import locale
 import redis
@@ -56,19 +56,19 @@ def get_market_prices(station_name, order_type, cached):
         print(f"Fresh {station_name} {order_type} order price data downloaded")
     return prices_dataframe
 
-def get_best_prices(order_type):
+def get_best_prices(order_type): # Deprecated, now handled by update_appraisal_prices from order_data
     locations_cached = True # Redis cache should be up to date from other scripts
 
     jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
     amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
-    delve_sell_df = get_market_prices('1DQ1-A', order_type, locations_cached)
+    tenerifis_sell_df = get_market_prices('Tenerifis', order_type, locations_cached)
     dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
 
     
     # TODO add dodixie and selection for locations
     print("Calculating best prices...")
     # List of DataFrames
-    sell_dfs = [jita_sell_df, amarr_sell_df, delve_sell_df, dodixie_sell_df]
+    sell_dfs = [jita_sell_df, amarr_sell_df, tenerifis_sell_df, dodixie_sell_df]
     # Combine DataFrames based on 'type_id'
     combined_df = pd.concat(sell_dfs)
     combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
@@ -82,16 +82,16 @@ def get_best_prices(order_type):
     # Extract prices from original dataframes and add them to the aggregated dataframe
     agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
     agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
-    agg_df['price_delve'] = agg_df.index.map(lambda x: delve_sell_df.loc[x, 'price'] if x in delve_sell_df.index else None)
+    agg_df['price_tenerifis'] = agg_df.index.map(lambda x: tenerifis_sell_df.loc[x, 'price'] if x in tenerifis_sell_df.index else None)
     agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
 
     # Rename columns for clarity
     agg_df.columns = ['min_price', 'min_price_location', 'max_price', 'max_price_location',
-                        'price_amarr', 'price_jita', 'price_delve', 'price_dodixie']
+                        'price_amarr', 'price_jita', 'price_tenerifis', 'price_dodixie']
     agg_df.reset_index(inplace=True) # Reset index again just to be sure
     #print("agg_df:\n",agg_df)
 
-    print("agg_df:\n",agg_df)
+    print("agg_df with min_price_location:\n",agg_df)
     cache_key = f'best_prices_{order_type}'
     print(f"Saving best_prices_{order_type} to redis cache")
     
@@ -173,7 +173,8 @@ def process_data():
             agg_df = get_best_prices(order_type)
     else: 
         print('Calculating a new list of best prices...')
-        agg_df = get_best_prices(order_type)
+        update_appraisal_prices()
+        agg_df = get_from_cache(cache_key)
 
     print("agg_df is lookin like:\n", agg_df)
     user_df = user_df.merge(agg_df, left_on='type_id', right_on='type_id') # Add prices to the user's list of items
@@ -184,10 +185,10 @@ def process_data():
     output_df['t_max_price'] = user_df['max_price'] * user_df['quantity'] 
     output_df['t_price_jita'] = user_df['price_jita'] * user_df['quantity'] 
     output_df['t_price_amarr'] = user_df['price_amarr'] * user_df['quantity']
-    output_df['t_price_delve'] = user_df['price_delve'] * user_df['quantity']
+    output_df['t_price_tenerifis'] = user_df['price_tenerifis'] * user_df['quantity']
     output_df['t_price_dodixie'] = user_df['price_dodixie'] * user_df['quantity']
 
-
+    print("output_df is lookin like:\n", output_df)
     # different display based on what the user is doing:
     if user_wants_to == 'buy':
         output_df['best_price'] = output_df['t_min_price']
@@ -203,7 +204,7 @@ def process_data():
         'best':output_df['best_price'].sum(skipna=False),
         'amarr':output_df['t_price_amarr'].sum(skipna=False),
         'jita':output_df['t_price_jita'].sum(skipna=False),
-        'delve':output_df['t_price_delve'].sum(skipna=False),
+        'tenerifis':output_df['t_price_tenerifis'].sum(skipna=False),
         'dodixie':output_df['t_price_dodixie'].sum(skipna=False),
         }
     
@@ -232,7 +233,7 @@ def process_data():
         total_jita=location_totals['jita'], 
         total_amarr=location_totals['amarr'],
         total_dodixie=location_totals['dodixie'],
-        total_delve=location_totals['delve'],
+        total_tenerifis=location_totals['tenerifis'],
         result=output_df,
         order_type = order_type,
         price_type = 'lowest' if user_wants_to =='buy' else 'highest'

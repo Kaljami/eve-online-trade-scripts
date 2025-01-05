@@ -158,8 +158,9 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
     #Master function to control async loop and process results
     sso_file = os.getenv("default_character_session_file")
 
-    names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ1-A': 10000060}
-    names_to_stn = {'Amarr': 60008494, 'Jita': 60003760, 'Dodixie': 60011866, 'Rens': 60004588, 'Hek': 60005686, '1DQ1-A': 1030049082711}
+    names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ1-A': 10000061, 'Tenerifis': 10000060}
+    names_to_stn = {'Amarr': 60008494, 'Jita': 60003760, 'Dodixie': 60011866, 'Rens': 60004588, 'Hek': 60005686, '1DQ1-A': 1030049082711, 'Tenerifis': 1046664001931}
+
 
     region_id = names_to_id[system_name]
     station_id = names_to_stn[system_name]
@@ -304,11 +305,11 @@ def update_caches(force=False):
     time_since_prices = check_metadata('prices')
     if time_since_prices > timedelta(hours=2) or force == True:
         #this might need some more thought on error handling
-        try:
+#        try:
             print("it's time to update prices!")
             logging.info("Starting to update price caches")
             sso_session = temp_test_oauth_session(sso_file)
-            locations = ['Jita', 'Amarr', '1DQ1-A', 'Dodixie']
+            locations = ['Jita', 'Amarr', 'Tenerifis', 'Dodixie']
             types = ['buy', 'sell']
 
             for location in locations:
@@ -324,9 +325,9 @@ def update_caches(force=False):
             update_appraisal_prices()
             update_metadata(appraisal_prices=True)
             update_contract_status() # todo give this a separate update frequency
-        except Exception as e:
-            print(f"Error while running the cache update (in order_data.py): \n {e}")
-            logging.error(f"Error while running the cache update (in order_data.py): \n {e}")
+#        except Exception as e:
+#            print(f"Error while running the cache update (in order_data.py): \n {e.with_traceback}")
+#            logging.error(f"Error while running the cache update (in order_data.py): \n {e.with_traceback}")
     else:
         print(f"it's been {time_since_prices} since prices were updated")
 
@@ -400,19 +401,21 @@ def update_blueprint_values():
 
 
 def update_appraisal_prices():
-    locations_cached = True # market orders were already fetched previously
-
+    locations_cached = False # market orders were already fetched previously
+    print("Starting update_appraisal_prices ----------")
+    sso_file = os.getenv("default_character_session_file")
+    sso_session = temp_test_oauth_session(sso_file)
     for order_type in ['sell', 'buy']:
         jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
         amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
-        delve_sell_df = get_market_prices('1DQ1-A', order_type, locations_cached)
+        tenerifis_sell_df = get_market_prices('Tenerifis', order_type, locations_cached, sso_session)
         dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
         
         
         # TODO add dodixie and selection for locations
         print("Calculating best prices...")
         # List of DataFrames
-        sell_dfs = [jita_sell_df, amarr_sell_df, delve_sell_df, dodixie_sell_df]
+        sell_dfs = [jita_sell_df, amarr_sell_df, tenerifis_sell_df, dodixie_sell_df]
         # Combine DataFrames based on 'type_id'
         combined_df = pd.concat(sell_dfs)
         combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
@@ -429,23 +432,23 @@ def update_appraisal_prices():
         # Extract prices from original dataframes and add them to the aggregated dataframe
         agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
         agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
-        agg_df['price_delve'] = agg_df.index.map(lambda x: delve_sell_df.loc[x, 'price'] if x in delve_sell_df.index else None)
+        agg_df['price_tenerifis'] = agg_df.index.map(lambda x: tenerifis_sell_df.loc[x, 'price'] if x in tenerifis_sell_df.index else None)
         agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
         
         cache_key = f'best_prices_{order_type}'
-        print(f"Saving best_prices_{order_type} to redis cache")
+        print(f"Saving best_prices_{order_type} to redis cache. Result df was: \n{agg_df}")
         
         save_to_cache(cache_key, agg_df)
 
-def get_market_prices(station_name, order_type, cached):
+def get_market_prices(station_name, order_type, cached, sso_session=None):
     prices_dataframe = pd.DataFrame()
-    market_prices = get_prices_from_station(station_name, order_type, cached) #set False to get updated prices
+    market_prices = get_prices_from_station(station_name, order_type, cached, sso_session) #set False to get updated prices
     prices_dataframe['price'] = market_prices
     prices_dataframe['location'] = station_name
     if cached == False:
         print(f"Fresh {station_name} {order_type} order price data downloaded")
 
-    historical_volume, historical_price = get_volume_price_history(station_name, prices_dataframe.index, 7, False)
+    historical_volume, historical_price, order_count = get_volume_price_history(station_name, prices_dataframe.index, 7, False)
     prices_dataframe = prices_dataframe.merge(historical_volume.rename('daily_volume'), how='left', left_on='type_id', right_index=True)
     return prices_dataframe
 
