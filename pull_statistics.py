@@ -50,6 +50,10 @@ def get_character_orders():
         buy_orders = pd.DataFrame(character_orders_data)
         sell_orders.set_index('type_id', inplace=True)
         buy_orders.set_index('type_id', inplace=True)
+        sell_orders['is_buy_order'] = 0
+        buy_orders['escrow'] = 0
+        buy_orders['is_buy_order'] = 0 # placeholders until I add some better error handling
+        
         sell_orders['is_buy_order'] = sell_orders['is_buy_order'].fillna(False)
         typeIDs_to_names = get_item_names()
         sell_orders['type_name'] = sell_orders.index.map(typeIDs_to_names)
@@ -60,7 +64,11 @@ def get_character_orders():
         sell_orders_f['total_value'] = sell_orders_f['price'] * sell_orders_f['volume_remain']
         sell_order_total_value = sell_orders_f['total_value'].sum()
         print("Sell order total value:", sell_order_total_value)
-        buy_order_total_value = buy_orders_f['escrow'].sum()
+        try:
+            buy_order_total_value = buy_orders_f['escrow'].sum()
+        except Exception as e:
+            logging.error('buy_order_total_value error:', e)
+            buy_order_total_value = 0
         print("Buy order total value:", buy_order_total_value)
         
         #print("Sell orders:")
