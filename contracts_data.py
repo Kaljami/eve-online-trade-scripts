@@ -452,6 +452,7 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
         embed.add_field(name="This contract contains unpublished items!", value=contains_unpublished, inline=True)
     # Add a link to the contract to be used in the in-game notepad
     embed.add_field(name="Paste to in-game notepad", value=f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>", inline=False)
+    logging.info(f"Contract {contract_id} contained unpublished items:{contains_unpublished}. Price:{p_price} Jita buy:{p_jita_buy_value}")
     
     #additionally can be used to set different icons or such
     #embed.set_author(name=sender_name, icon_url=sender_icon_url) 
@@ -486,7 +487,10 @@ async def really_send_embed():
         
 
         # Calculations
-        discount = 1 - price/jita_buy_value
+        try: 
+            discount = 1 - price/jita_buy_value #fails if no item has market value. Mostly unpublished items. 
+        except:
+            discount = 0
         #discount = round(discount, 3)
         discount_pct = format(discount, ".1%")
         difference = jita_buy_value - price
@@ -498,6 +502,10 @@ async def really_send_embed():
         age_str = prettify_age(age)
         p_packaged_volume=prettify_num(packaged_volume)
         packaged_volume = "%.2f" % packaged_volume
+        if contains_unpublished > 0:
+            print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}, Contains unpublished items!")
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished)
+            await send_embed(discord_webhook_url, embed)
         if discount > (minimum_profit_percentage/100) and jita_buy_value > minimum_profit_absolute:
             print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}")
             print(f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>")
@@ -508,10 +516,6 @@ async def really_send_embed():
             await send_embed(discord_webhook_url, embed)
             #print ("Message sent")
             n_good_profit_margin += 1
-        if contains_unpublished > 0:
-            print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}, Contains unpublished items!")
-            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished)
-            await send_embed(discord_webhook_url, embed)
 
 
     logging.info(f"{n_good_profit_margin} of the contracts had profit margin above {minimum_profit_percentage}% and buy value above {minimum_profit_absolute} ISK")
@@ -586,6 +590,7 @@ query = f"""
         SELECT *
         FROM contracts
         WHERE price < jita_buy_value
+        OR contains_unpublished > 0
     ) AS recent_contracts
     WHERE date_discovered >= '{current_timestamp}' - INTERVAL 9 MINUTE;
 """
@@ -595,8 +600,8 @@ current_timestamp = datetime.now(timezone.utc)
 result_df = pd.read_sql_query(query, con=engine)
 #print("New contracts priced below jita buy:\n", result_df)
 n_new_profitable_contracts = len(result_df.index)
-logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price.")
-print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price. Starting to send Discord notifications.")
+logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items.") 
+print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items. Starting to send Discord notifications.") #TODO separate into two independent counters
 #print("here's the result_df")
 #print(result_df)
 
