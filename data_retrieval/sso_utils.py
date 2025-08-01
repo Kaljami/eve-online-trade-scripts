@@ -125,7 +125,6 @@ def oauth_session():
                 'esi-clones.read_clones.v1',
                 'esi-characters.read_contacts.v1',
                 'esi-universe.read_structures.v1',
-                'esi-bookmarks.read_character_bookmarks.v1',
                 'esi-killmails.read_killmails.v1',
                 'esi-corporations.read_corporation_membership.v1',
                 'esi-assets.read_assets.v1',
@@ -140,7 +139,6 @@ def oauth_session():
                 'esi-markets.structure_markets.v1',
                 'esi-corporations.read_structures.v1',
                 'esi-characters.read_loyalty.v1',
-                'esi-characters.read_opportunities.v1',
                 'esi-characters.read_chat_channels.v1',
                 'esi-characters.read_medals.v1',
                 'esi-characters.read_standings.v1',
@@ -162,7 +160,6 @@ def oauth_session():
                 'esi-assets.read_corporation_assets.v1',
                 'esi-corporations.read_titles.v1',
                 'esi-corporations.read_blueprints.v1',
-                'esi-bookmarks.read_corporation_bookmarks.v1',
                 'esi-contracts.read_corporation_contracts.v1',
                 'esi-corporations.read_standings.v1',
                 'esi-corporations.read_starbases.v1',
@@ -182,12 +179,12 @@ def oauth_session():
             ]
         )
 
-        auth_url, state = oauth.authorization_url('https://login.eveonline.com/oauth/authorize')
+        auth_url, state = oauth.authorization_url('https://login.eveonline.com/v2/oauth/authorize')
         webbrowser.open(auth_url)
 
         auth_response = input('Enter the callback URL > ')
         oauth.fetch_token(
-                'https://login.eveonline.com/oauth/token',
+                'https://login.eveonline.com/v2/oauth/token',
                 authorization_response=auth_response,
                 client_secret=CLIENT_SECRET
             )
@@ -221,7 +218,6 @@ def oauth_session():
                     'esi-clones.read_clones.v1',
                     'esi-characters.read_contacts.v1',
                     'esi-universe.read_structures.v1',
-                    'esi-bookmarks.read_character_bookmarks.v1',
                     'esi-killmails.read_killmails.v1',
                     'esi-corporations.read_corporation_membership.v1',
                     'esi-assets.read_assets.v1',
@@ -236,7 +232,6 @@ def oauth_session():
                     'esi-markets.structure_markets.v1',
                     'esi-corporations.read_structures.v1',
                     'esi-characters.read_loyalty.v1',
-                    'esi-characters.read_opportunities.v1',
                     'esi-characters.read_chat_channels.v1',
                     'esi-characters.read_medals.v1',
                     'esi-characters.read_standings.v1',
@@ -258,7 +253,6 @@ def oauth_session():
                     'esi-assets.read_corporation_assets.v1',
                     'esi-corporations.read_titles.v1',
                     'esi-corporations.read_blueprints.v1',
-                    'esi-bookmarks.read_corporation_bookmarks.v1',
                     'esi-contracts.read_corporation_contracts.v1',
                     'esi-corporations.read_standings.v1',
                     'esi-corporations.read_starbases.v1',
@@ -278,7 +272,7 @@ def oauth_session():
                 ]
             )
             oauth.refresh_token(
-                    'https://login.eveonline.com/oauth/token',
+                    'https://login.eveonline.com/v2/oauth/token',
                     refresh_token=oauth.token['refresh_token'],
                     client_id=CLIENT_ID,
                     client_secret=CLIENT_SECRET
@@ -315,7 +309,7 @@ def cycle_oauth_session():
                 ]
             )
             oauth.refresh_token(
-                    'https://login.eveonline.com/oauth/token',
+                    'https://login.eveonline.com/v2/oauth/token',
                     refresh_token=oauth.token['refresh_token'],
                     client_id=CLIENT_ID,
                     client_secret=CLIENT_SECRET
@@ -351,7 +345,7 @@ def temp_test_oauth_session(session_file):
                 ]
             )
             oauth.refresh_token(
-                    'https://login.eveonline.com/oauth/token',
+                    'https://login.eveonline.com/v2/oauth/token',
                     refresh_token=oauth.token['refresh_token'],
                     client_id=CLIENT_ID,
                     client_secret=CLIENT_SECRET
@@ -387,7 +381,6 @@ def new_login():
                 'esi-clones.read_clones.v1',
                 'esi-characters.read_contacts.v1',
                 'esi-universe.read_structures.v1',
-                'esi-bookmarks.read_character_bookmarks.v1',
                 'esi-killmails.read_killmails.v1',
                 'esi-corporations.read_corporation_membership.v1',
                 'esi-assets.read_assets.v1',
@@ -402,7 +395,6 @@ def new_login():
                 'esi-markets.structure_markets.v1',
                 'esi-corporations.read_structures.v1',
                 'esi-characters.read_loyalty.v1',
-                'esi-characters.read_opportunities.v1',
                 'esi-characters.read_chat_channels.v1',
                 'esi-characters.read_medals.v1',
                 'esi-characters.read_standings.v1',
@@ -424,7 +416,6 @@ def new_login():
                 'esi-assets.read_corporation_assets.v1',
                 'esi-corporations.read_titles.v1',
                 'esi-corporations.read_blueprints.v1',
-                'esi-bookmarks.read_corporation_bookmarks.v1',
                 'esi-contracts.read_corporation_contracts.v1',
                 'esi-corporations.read_standings.v1',
                 'esi-corporations.read_starbases.v1',
@@ -444,13 +435,13 @@ def new_login():
             ]
         )
 
-        auth_url, state = oauth.authorization_url('https://login.eveonline.com/oauth/authorize')
+        auth_url, state = oauth.authorization_url('https://login.eveonline.com/v2/oauth/authorize')
         #print(auth_url)
         webbrowser.open(auth_url)
 
         auth_response = input('Enter the callback URL > ')
         oauth.fetch_token(
-                'https://login.eveonline.com/oauth/token',
+                'https://login.eveonline.com/v2/oauth/token',
                 authorization_response=auth_response,
                 client_secret=CLIENT_SECRET
             )
