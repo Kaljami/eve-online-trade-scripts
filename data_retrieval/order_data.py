@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 import redis
 from tqdm import tqdm
 from datetime import datetime, timezone, timedelta
-from data_retrieval.sso_utils import temp_test_oauth_session
+from data_retrieval.sso_utils import reuse_oauth_session
 from data_processing.sde_utils import get_item_names
 from data_retrieval.update_contract_database import update_contract_status
 import logging
@@ -176,7 +176,7 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
             return buy_orders
         
     if region_id == 10000002: # In The Forge, get prices from Jita + Perimeter citadels
-        sso_session = temp_test_oauth_session(sso_file)
+        sso_session = reuse_oauth_session(sso_file)
         perimeter_citadels = [1044752365771,1042499803831,1042508032148] # structure ID's to look for market orders. 
         all_orders = []
         for citadel in perimeter_citadels:
@@ -308,7 +308,7 @@ def update_caches(force=False):
 #        try:
             print("it's time to update prices!")
             logging.info("Starting to update price caches")
-            sso_session = temp_test_oauth_session(sso_file)
+            sso_session = reuse_oauth_session(sso_file)
             locations = ['Jita', 'Amarr', 'Tenerifis', 'Dodixie']
             types = ['buy', 'sell']
 
@@ -404,7 +404,7 @@ def update_appraisal_prices():
     locations_cached = False # market orders were already fetched previously
     print("Starting update_appraisal_prices ----------")
     sso_file = os.getenv("default_character_session_file")
-    sso_session = temp_test_oauth_session(sso_file)
+    sso_session = reuse_oauth_session(sso_file)
     for order_type in ['sell', 'buy']:
         jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
         amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)

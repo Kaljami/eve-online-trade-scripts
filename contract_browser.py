@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
-from data_retrieval.sso_utils import temp_test_oauth_session, get_character
+from data_retrieval.sso_utils import reuse_oauth_session, get_character
 
 app = Flask(__name__, template_folder='./render/contract_browser', static_folder='./render/contract_browser/static', )
 load_dotenv()
@@ -46,7 +46,7 @@ def index(query_filter=''):
 ### Open contract in-game
 @app.route('/open_contract/<contract_id>', methods=['GET'])
 def open_contract(contract_id):
-    sso_session = temp_test_oauth_session(f'session_data_{temp_character_id}.json')
+    sso_session = reuse_oauth_session(f'session_data_{temp_character_id}.json')
     print(f'logged in as { get_character(sso_session)}')
     url = f'https://esi.evetech.net/latest/ui/openwindow/contract/?contract_id={contract_id}'
     params = {}

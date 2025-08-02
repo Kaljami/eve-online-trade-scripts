@@ -38,7 +38,7 @@ def cycle_sso(session_file):
     #sessions_directory_stats = 'sessions_stats'
     #session_files = [f for f in os.listdir(sessions_directory_stats) if f.endswith('.json')]
     #print (session_files)
-    sso_session = sso_utils.temp_test_oauth_session(session_file)
+    sso_session = sso_utils.reuse_oauth_session(session_file)
 
 def get_character_orders():
     character_orders_url = f'https://esi.evetech.net/latest/characters/{character_id}/orders/'
@@ -520,7 +520,7 @@ def rotate_all_sessions():
         logging.debug(f"-----------------\nStarting to pull statistics for character {character_name}")
         print(f'SSO Status: {f"Logged in as {character_name}" if character_name else "Not logged in"}')
         if char_index == 1:
-            prices_dataframe = get_jita_prices(False) #only get live prices on the first round
+            prices_dataframe = get_jita_prices(True) # Get cached prices since other scripts are updating the cache
             avg_prices_dataframe = get_average_prices()
 
         character_sell_order_value, character_buy_order_value = get_character_orders()
@@ -547,7 +547,6 @@ def rotate_all_sessions():
 rotate_all_sessions()
 
 # other data to get:
-# plex wallet (is it possible?)
 # implants currently in head
 # wallet transactions to track most traded items etc
     # should item names be added to the same table? 
