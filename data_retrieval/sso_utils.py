@@ -197,6 +197,7 @@ def cycle_oauth_session():
                     'esi-skills.read_skills.v1',
                     'esi-wallet.read_character_wallet.v1',
                     'esi-ui.open_window.v1',
+                    'esi-location.read_location.v1',
                     'esi-markets.structure_markets.v1',
                     'esi-markets.read_character_orders.v1',
                     'esi-markets.read_corporation_orders.v1',
@@ -315,12 +316,12 @@ def reuse_oauth_session(session_file):
     if session_data:
         try:
             oauth = login_using_saved_session(session_data)
+            return oauth
         except Exception as e:
             print (e)
     else:
         print ("Error selecting saved session")
-
-    return oauth
+    
 
 def new_login():
         oauth = OAuth2Session(
@@ -444,6 +445,7 @@ def get_corporation_name(corporation_id):
 def get_character_location(session):
     character_id = get_character_id(session)
     res = session.get(f'https://esi.evetech.net/latest/characters/{character_id}/location/')
+    print(res.json()) #debug
     return res.json()['solar_system_id']
 
 

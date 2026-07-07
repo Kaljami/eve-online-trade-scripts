@@ -157,7 +157,7 @@ def get_all_orders(system_name, order_type, cached, sso_session):
 def get_all_orders_concurrent(system_name, order_type, sso_session):
     #Master function to control async loop and process results
     sso_file = os.getenv("default_character_session_file")
-
+    print(f'Loading {system_name} {order_type} orders using sso_file {sso_file}...')
     names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ1-A': 10000061, 'Tenerifis': 10000060}
     names_to_stn = {'Amarr': 60008494, 'Jita': 60003760, 'Dodixie': 60011866, 'Rens': 60004588, 'Hek': 60005686, '1DQ1-A': 1030049082711, 'Tenerifis': 1046664001931}
 
@@ -177,9 +177,11 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
         
     if region_id == 10000002: # In The Forge, get prices from Jita + Perimeter citadels
         sso_session = reuse_oauth_session(sso_file)
-        perimeter_citadels = [1044752365771,1042499803831,1042508032148] # structure ID's to look for market orders. 
+        print("Getting orders from Jita and Perimeter citadels")
+        perimeter_citadels = [1042508032148] # structure ID's to look for market orders. 
         all_orders = []
         for citadel in perimeter_citadels:
+            print(f"Getting orders from citadel {citadel}")
             pages = get_num_pages_citadel(citadel, order_type, sso_session)
             citadel_orders = citadel_get_all_orders(citadel, pages, order_type, sso_session)
             if order_type == "sell":
@@ -408,14 +410,14 @@ def update_appraisal_prices():
     for order_type in ['sell', 'buy']:
         jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
         amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
-        tenerifis_sell_df = get_market_prices('Tenerifis', order_type, locations_cached, sso_session)
+        #tenerifis_sell_df = get_market_prices('Tenerifis', order_type, locations_cached, sso_session)
         dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
         
         
         # TODO add dodixie and selection for locations
         print("Calculating best prices...")
         # List of DataFrames
-        sell_dfs = [jita_sell_df, amarr_sell_df, tenerifis_sell_df, dodixie_sell_df]
+        sell_dfs = [jita_sell_df, amarr_sell_df, dodixie_sell_df]
         # Combine DataFrames based on 'type_id'
         combined_df = pd.concat(sell_dfs)
         combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
@@ -432,7 +434,6 @@ def update_appraisal_prices():
         # Extract prices from original dataframes and add them to the aggregated dataframe
         agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
         agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
-        agg_df['price_tenerifis'] = agg_df.index.map(lambda x: tenerifis_sell_df.loc[x, 'price'] if x in tenerifis_sell_df.index else None)
         agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
         
         cache_key = f'best_prices_{order_type}'

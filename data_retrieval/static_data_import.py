@@ -15,25 +15,25 @@ mysql_host = os.getenv("mysql_host")
 mysql_database = os.getenv("mysql_database_fuzzworks")
 
 url_list = [
-    'https://www.fuzzwork.co.uk/dump/latest/invTypes.sql.bz2', # type id's and names 
-    'https://www.fuzzwork.co.uk/dump/latest/invVolumes.sql.bz2', # these are packaged volumes! 
-    'https://www.fuzzwork.co.uk/dump/latest/invTypeMaterials.sql.bz2', # refine materials 
-    'https://www.fuzzwork.co.uk/dump/latest/industryActivity.sql.bz2', # industry activity times 
-    'https://www.fuzzwork.co.uk/dump/latest/industryActivityProducts.sql.bz2', # blueprint outputs
-    'https://www.fuzzwork.co.uk/dump/latest/industryActivityMaterials.sql.bz2', # blueprint inputs
-    'https://www.fuzzwork.co.uk/dump/latest/industryBlueprints.sql.bz2', # type id's and maximum runs
-    'https://www.fuzzwork.co.uk/dump/latest/invCategories.sql.bz2', # pretty self explanatory, category, group and market group id's for type_id's
-    'https://www.fuzzwork.co.uk/dump/latest/invGroups.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/invMarketGroups.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/mapSolarSystems.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/mapRegions.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/invTypes.sql.bz2', # type id's and names 
+    'https://www.fuzzwork.co.uk/dump/old/latest/invVolumes.sql.bz2', # these are packaged volumes! 
+    'https://www.fuzzwork.co.uk/dump/old/latest/invTypeMaterials.sql.bz2', # refine materials 
+    'https://www.fuzzwork.co.uk/dump/old/latest/industryActivity.sql.bz2', # industry activity times 
+    'https://www.fuzzwork.co.uk/dump/old/latest/industryActivityProducts.sql.bz2', # blueprint outputs
+    'https://www.fuzzwork.co.uk/dump/old/latest/industryActivityMaterials.sql.bz2', # blueprint inputs
+    'https://www.fuzzwork.co.uk/dump/old/latest/industryBlueprints.sql.bz2', # type id's and maximum runs
+    'https://www.fuzzwork.co.uk/dump/old/latest/invCategories.sql.bz2', # pretty self explanatory, category, group and market group id's for type_id's
+    'https://www.fuzzwork.co.uk/dump/old/latest/invGroups.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/invMarketGroups.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/mapSolarSystems.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/mapRegions.sql.bz2',
     # dogma attributes:
-    'https://www.fuzzwork.co.uk/dump/latest/dgmTypeEffects.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/dgmTypeAttributes.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/dgmExpressions.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/dgmEffects.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/dgmAttributeTypes.sql.bz2',
-    'https://www.fuzzwork.co.uk/dump/latest/dgmAttributeCategories.sql.bz2'
+    'https://www.fuzzwork.co.uk/dump/old/latest/dgmTypeEffects.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/dgmTypeAttributes.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/dgmExpressions.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/dgmEffects.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/dgmAttributeTypes.sql.bz2',
+    'https://www.fuzzwork.co.uk/dump/old/latest/dgmAttributeCategories.sql.bz2'
     ]
 
 def import_sql_dump(dump_file):
@@ -76,10 +76,12 @@ for url in url_list:
     extracted_file = "temp_import.sql"
 
     # Download the file
+    print(f"Downloading {url}...")
     response = requests.get(url)
     with open(downloaded_file, "wb") as f:
         f.write(response.content)
 
+    print(f"Extracting {downloaded_file}...")
     # Extract the downloaded file
     with open(extracted_file, "wb") as f_out, bz2.BZ2File(downloaded_file, "rb") as f_in:
         for data in iter(lambda : f_in.read(100 * 1024), b''):
