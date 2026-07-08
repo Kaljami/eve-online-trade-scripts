@@ -178,7 +178,7 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
     if region_id == 10000002: # In The Forge, get prices from Jita + Perimeter citadels
         sso_session = reuse_oauth_session(sso_file)
         print("Getting orders from Jita and Perimeter citadels")
-        perimeter_citadels = [1042508032148] # structure ID's to look for market orders. 
+        perimeter_citadels = [1042508032148, 1044752365771] # structure ID's to look for market orders. 
         all_orders = []
         for citadel in perimeter_citadels:
             print(f"Getting orders from citadel {citadel}")

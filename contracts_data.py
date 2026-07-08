@@ -92,14 +92,21 @@ async def get_page(session, region_id, page):
 
 
 async def async_get_all_contracts(region_id, pages):
-    """Async get all pages of contracts for a given region."""
+    """Async get all pages of contracts for a given region with a progress bar."""
     async with aiohttp.ClientSession() as session:
         tasks = [
-            get_page(session, region_id, page)
-            for page in
-            range(1, pages + 1)
+            asyncio.create_task(get_page(session, region_id, page))
+            for page in range(1, pages + 1)
         ]
-        return await asyncio.gather(*tasks)
+
+        results = []
+
+        with tqdm(total=pages, desc="Downloading contract pages") as pbar:
+            for task in asyncio.as_completed(tasks):
+                results.append(await task)
+                pbar.update(1)
+
+        return results
     
 def get_all_contracts_concurrent(region_name):
     """Master function to control async loop and process results."""
@@ -164,18 +171,26 @@ def process_contract(contract_id, prices_dataframe):
         print(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
         return 0, 0, 0, 'no market value', 0, pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]), 0 # Trying to pass a dummy dataframe if getting the items fails
 
-def get_all_contracts_from_region(region_name, cached) -> pd.Series:
-    #print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
+def get_contracts_from_sql():
+    print("Getting existing contract ids in database...")
+    existing_contract_ids_query = "SELECT contract_id FROM contracts;"
+    existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
+    return existing_contract_ids
+
+def get_all_contracts_from_region(region_name, cached, existing_contract_ids) -> pd.Series:
+    print(f'Loading contracts from {region_name} using {"cached data" if cached else "ESI"}...')
     contracts_json = get_all_contracts(region_name, cached)
     #print(f'Got {len(contracts_json)} contracts!')
     logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
     contracts_df = pd.DataFrame.from_records(contracts_json)
     ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange'] # ie = item exchange contracts only
 
-    existing_contract_ids_query = "SELECT contract_id FROM contracts;"
-    existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
+    print("Ignoring contracts that already exist in the database...")
+    #existing_contract_ids_query = "SELECT contract_id FROM contracts;"
+    #existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
     ie_contracts_df = ie_contracts_df[~ie_contracts_df['contract_id'].isin(existing_contract_ids)] # remove all the contracts that already exist in the database
 
+    print("Converting date strings to datetime objects...")
     ie_contracts_df['date_issued'] = ie_contracts_df['date_issued'].apply(convert_date_string_to_datetime)
     ie_contracts_df['date_expired'] = ie_contracts_df['date_expired'].apply(convert_date_string_to_datetime)
 
@@ -194,6 +209,8 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     if contract_items_price_type == 'average':
         prices_dataframe = prices_dataframe_average
     # Multithreading for fetching data
+    
+    print("Calculating contract values and item prices...")
     with ThreadPoolExecutor() as executor:
         
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
@@ -221,6 +238,9 @@ def get_all_contracts_from_region(region_name, cached) -> pd.Series:
     ie_contracts_df['region_name'] = region_name
     ie_contracts_df['contains_unpublished'] = contains_unpublished_list
     
+    if len(items_dfs) == 0:
+        print(f"No new contracts found in {region_name}.")
+        return ie_contracts_df, pd.DataFrame()
     try:
         print(f"Merging {len(items_dfs)} item dataframes...")
         region_items_df = merge_dfs_in_chunks(items_dfs)
@@ -570,9 +590,11 @@ prices_dataframe_buy = get_market_prices("Jita", 'buy', use_cached_prices)
 prices_dataframe_average = get_average_prices(use_cached_prices)
 #print(prices_dataframe_average)
 
+existing_contract_ids = get_contracts_from_sql()
+
 current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 for region in regions:
-    ie_contracts_df, region_items_df = get_all_contracts_from_region(region, False)
+    ie_contracts_df, region_items_df = get_all_contracts_from_region(region, False, existing_contract_ids)
     ie_contracts_df['date_discovered'] = current_timestamp # uses local time
     # Save contracts
     if save_dataframe_to_db(ie_contracts_df, 'contracts', engine, region):
