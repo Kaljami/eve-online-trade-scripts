@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 ### This is a shitshow and needs to be cleaned up
 
 sessions_directory = 'sessions'
-sessions_directory_stats = 'sessions'
+sessions_directory_stats = 'sessions_stats'
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = 'True' # seriously don't do this lol. Possibly throws an error because it tries to open the callback url https://localhost but there's no certificate? 
 
