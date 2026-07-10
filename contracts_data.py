@@ -5,6 +5,7 @@ import aiohttp
 import asyncio
 import pandas as pd
 import nest_asyncio
+import yaml
 from sqlalchemy import create_engine, inspect, text
 from tqdm import tqdm
 from data_retrieval.order_data import get_prices_from_station, get_average_prices, update_caches, redis_connection
@@ -47,7 +48,7 @@ maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
 maximum_volume = maximum_volume_freighter
 ignore_rigs = True
-ignore_list = ['Daredevil Blueprint', '* Booster Blueprint', 'Monitor Blueprint', 'Neurolink Enhancer Reservoir Blueprint', 'Structure * Blueprint'] # No notifications will be sent about items that are on this list. Only works if the said item is the most valuable one on the contract. 
+ignore_list_path = os.getenv("ignore_list_path", "contract_ignore_list.yaml") # Path to the YAML file holding items to ignore in notifications. Edit that file to manage the list without touching this script. Only suppresses notifications if that item is the top value item in the contract.
 # TODO: one day, make discord bot listen so you can manage these setting from discord. 
 
 # Prices: 
@@ -73,6 +74,39 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+def load_ignore_list(path=None):
+    """Load the list of item names/patterns to ignore from an external YAML file.
+
+    The YAML file is expected to look like:
+        ignore_list:
+          - "Daredevil Blueprint"
+          - "* Booster Blueprint"
+
+    Falls back to an empty list (with a logged warning) if the file is
+    missing, empty, or malformed, so a bad/missing config never crashes
+    the whole script.
+    """
+    path = path or ignore_list_path
+    try:
+        with open(path, 'r') as file:
+            data = yaml.safe_load(file) or {}
+        items = data.get('ignore_list', [])
+        if not isinstance(items, list):
+            raise ValueError(f"'ignore_list' in {path} should be a list, got {type(items).__name__}")
+        print(f"Loaded {len(items)} entries from ignore list at {path}")
+        logging.info(f"Loaded {len(items)} entries from ignore list at {path}")
+        return items
+    except FileNotFoundError:
+        print(f"Ignore list file not found at {path}. Proceeding with an empty ignore list.")
+        logging.warning(f"Ignore list file not found at {path}. Proceeding with an empty ignore list.")
+        return []
+    except Exception as e:
+        print(f"Error loading ignore list from {path}: {e}. Proceeding with an empty ignore list.")
+        logging.error(f"Error loading ignore list from {path}: {e}. Proceeding with an empty ignore list.")
+        return []
+
+ignore_list = load_ignore_list()
 
 def get_num_pages(region_id):
     """Use requests to grab a page of contracts, returning the X-Pages header from the response."""
@@ -452,7 +486,7 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     (contains_unpublished > 0)
     ):
         print ("found a good profit!", discount)
-        send_discord_message(f"Daddy <{discord_contract_notification_tag_id}> I found a good profit of {p_difference} ISK! It's on contract below :3") # tag the recipient in a separate message 
+        send_discord_message(f"<{discord_contract_notification_tag_id}> I found a good profit of {p_difference} ISK! It's on contract below :3") # tag the recipient in a separate message 
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.green())
     if volume > 200000:
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.red())
@@ -575,7 +609,7 @@ def save_dataframe_to_db(df, table_name, engine, region_name):
 async def main():
     await really_send_embed()
 
-update_caches()
+update_caches() # Prices updated by default every 2 hours. Blueprint values every 24 hours. 
 packaged_volumes_dataframe = load_packaged_volumes()
 rig_type_ids = get_rig_type_ids()
 blueprint_values_df = get_blueprint_profits()

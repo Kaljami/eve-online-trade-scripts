@@ -194,3 +194,4 @@ docker-compose copy.yaml
 *.tar.bz2
 data_retrieval/latest_contracts/meta.json
 latest_contracts/meta.json
+contract_ignore_list.yaml

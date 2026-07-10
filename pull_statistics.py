@@ -96,7 +96,7 @@ def get_pageful_of_assets(session, character_assets_url, page):
         print("Got timeout when grabbing assets. Retrying...")
         logging.warning(f"Got timeout when grabbing assets with get_pageful_of_assets(). Retrying...")
         time.sleep(retry_delay)
-    logging.info(f"get_pageful_of_assets response status: {response.status_code}")
+    logging.debug(f"get_pageful_of_assets response status: {response.status_code}")
     logging.debug(f"Response headers: {response.headers}")
     try:
         response_json = response.json()
@@ -214,7 +214,7 @@ def get_corporation_assets(prices_dataframe):
     #print(f"Total asset value: {total_asset_value}")
     #merged_asset_df.to_csv('merged_asset_df.csv', index=False)
     #merged_asset_df.to_excel('merged_asset_df.xlsx')
-    logging.debug(f"Got total corp asset value of {total_asset_value}")
+    logging.info(f"Got total corp asset value of {total_asset_value}")
     return total_asset_value
 
 def get_character_industry_jobs(prices_dataframe):
@@ -261,7 +261,7 @@ def get_corporation_industry_jobs(prices_dataframe):
         # Calculate the total sum for all rows
         total_sum = merged_industry_df['total_price'].sum()
         #print(f"Total industry job outputs: {total_sum}")
-        logging.debug(f"Total corporation industry job outputs: {total_sum}")
+        logging.info(f"Total corporation industry job outputs: {total_sum}")
         return total_sum
     else:
         logging.debug(f"no corporation industry jobs found")
@@ -282,6 +282,7 @@ def get_character_implants(): #TODO add the current clone implants to this
         total_sum = merged_clones_df['jita_price'].sum()
         #print(str(merged_clones_df))
         print(f"Total clone implant value: {total_sum}")
+        logging.info(f"Total clone implant value: {total_sum}")
         return total_sum
     else:
         print ("no clones found")
@@ -373,6 +374,7 @@ def get_character_transactions():
         new_entries = transactions_dataframe[~transactions_dataframe['journal_ref_id'].isin(existing_entries['journal_ref_id'])]
         new_entries.to_sql('transactions', con=engine, if_exists='append', index=False, method='multi', chunksize=1000)
         print(f"Market transactions for {character_name} saved in MySQL")
+        logging.info(f"Market transactions for {character_name} saved in MySQL")
     else: 
         print(f"No market transactions found for {character_name}")
 
@@ -409,6 +411,7 @@ def get_character_contracts():
                 price = row['price']
                 if status == 'finished':
                     print(f"{character_name}'s contract {contract_id} has finished! We got {prettify_num(price)} ISK for it.")
+                    logging.info(f"{character_name}'s contract {contract_id} has finished! We got {prettify_num(price)} ISK for it.")
                 else: 
                     print(f'Contract id {contract_id} status has changed to {status}')
 
@@ -429,6 +432,7 @@ def get_character_contracts():
         #print (outstanding_contracts)
         total_sum = outstanding_contracts['price'].sum()
         print(f"Total outstanding contract value: {total_sum}")
+        logging.info(f"Total outstanding contract value: {total_sum}")
         n_outstanding_contracts = len(outstanding_contracts)
         print(f"Number of outstanding contracts: {n_outstanding_contracts}")
         return total_sum, n_outstanding_contracts
@@ -519,6 +523,7 @@ def rotate_all_sessions():
         corporation_name = sso_utils.get_corporation_name(corporation_id)
         logging.debug(f"-----------------\nStarting to pull statistics for character {character_name}")
         print(f'SSO Status: {f"Logged in as {character_name}" if character_name else "Not logged in"}')
+        logging.info(f"SSO Status: {f'Logged in as {character_name}' if character_name else 'Not logged in'}")
         if char_index == 1:
             prices_dataframe = get_jita_prices(True) # Get cached prices since other scripts are updating the cache
             avg_prices_dataframe = get_average_prices()
@@ -533,7 +538,7 @@ def rotate_all_sessions():
         get_character_transactions()
         character_contract_value, character_contract_amount = get_character_contracts()
         if character_id == corporation_ceo_id:
-            logging.debug(f"{character_name} is CEO of corporation ID {corporation_id}. Getting corporation data.")
+            logging.info(f"{character_name} is CEO of corporation ID {corporation_id}. Getting corporation data.")
             corporation_asset_value = get_corporation_assets(avg_prices_dataframe)
             corporation_industry_value = get_corporation_industry_jobs(prices_dataframe)
             df=create_summary_dataframe(character_id, character_name, character_wallet_balance, character_asset_value, character_industry_value, character_sell_order_value, character_buy_order_value, character_implants, corporation_asset_value, corporation_industry_value, character_contract_value, character_contract_amount)
@@ -545,9 +550,9 @@ def rotate_all_sessions():
             write_to_influxdb_v1(df, measurement='character_stats', tags={'character_name': character_name})
 
 rotate_all_sessions()
+logging.info("Finished pulling statistics for all characters")
 
 # other data to get:
 # implants currently in head
 # wallet transactions to track most traded items etc
     # should item names be added to the same table? 
-# contract value
