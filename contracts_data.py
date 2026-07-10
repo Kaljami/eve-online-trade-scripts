@@ -198,12 +198,12 @@ def load_published_types():
 
 def process_contract(contract_id, prices_dataframe):
     try:
-        contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished = get_contract_items_value(contract_id, prices_dataframe)
-        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished
+        contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished, unpublished_items = get_contract_items_value(contract_id, prices_dataframe)
+        return contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished, unpublished_items
     except Exception as e:
         logging.error(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
         print(f"Error on process_contract() when processing contract_id {contract_id}: {e}")
-        return 0, 0, 0, 'no market value', 0, pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]), 0 # Trying to pass a dummy dataframe if getting the items fails
+        return 0, 0, 0, 'no market value', 0, pd.DataFrame({'contract_id': contract_id, 'row_id': 0 ,'price': 0}, index=[0]), 0, "" # Trying to pass a dummy dataframe if getting the items fails
 
 def get_contracts_from_sql():
     print("Getting existing contract ids in database...")
@@ -235,6 +235,7 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     total_material_prices = []
     items_dfs = []
     contains_unpublished_list = []
+    unpublished_items_list = []
     
     if contract_items_price_type == 'buy':
         prices_dataframe = prices_dataframe_buy
@@ -250,7 +251,7 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
         for future in tqdm(futures, desc=f"Processing {region_name} contract contents", unit="contracts", total=len(futures)):
             try:
-                contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished = future.result()
+                contract_value, contract_packaged_volume, total_requested_price, top_item_name, total_material_price, items_df, contains_unpublished, unpublished_items = future.result()
                 if items_df is None:
                     raise Exception(f"items_df for contract_id {ie_contracts_df['contract_id'].iloc[0]} was None. Shape: {items_df.shape}")
                 contract_values.append(contract_value)
@@ -270,7 +271,8 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     ie_contracts_df['top_item_name'] = top_item_names
     ie_contracts_df['total_material_price'] = total_material_prices
     ie_contracts_df['region_name'] = region_name
-    ie_contracts_df['contains_unpublished'] = contains_unpublished_list
+    ie_contracts_df["contains_unpublished"] = contains_unpublished_list
+    ie_contracts_df["unpublished_items"] = unpublished_items_list
     
     if len(items_dfs) == 0:
         print(f"No new contracts found in {region_name}.")
@@ -356,7 +358,7 @@ def get_contract_items_value(contract_id, prices_dataframe):
     #print("prices df: \n", prices_dataframe)
     #print("dataframe before volumes: \n", merged_items_df)
     merged_items_df = merged_items_df.merge(packaged_volumes_dataframe, left_on='type_id', right_index=True) # Add packaged volumes for items
-    merged_items_df = merged_items_df.merge(published_status_df, left_on='type_id', right_index=True, how='left') # Add packaged volumes for items
+    merged_items_df = merged_items_df.merge(published_status_df, left_on='type_id', right_index=True, how='left') # Add publish statusfor items
 
     # If items are requested (is_included == False), add their total value to the column "requested_price"
     merged_items_df.loc[merged_items_df['is_included'] == False, 'requested_price'] = merged_items_df['quantity'] * merged_items_df['price'] 
@@ -407,10 +409,15 @@ def get_contract_items_value(contract_id, prices_dataframe):
     #print("final result:\n",merged_items_df)
     merged_items_df['contract_id'] = contract_id
     merged_items_df['row_id'] = merged_items_df.index
-    contains_unpublished = len(merged_items_df.loc[merged_items_df["published"] == 0])
-    
+    unpublished_df = merged_items_df.loc[merged_items_df["published"] == 0]
+
+    contains_unpublished = len(unpublished_df)
+
+    unpublished_items = ", ".join(
+        unpublished_df["type_name"].dropna().unique()
+    )
     #print("final result:\n",merged_items_df)
-    return total_sum, total_packaged_volume, total_requested_price, top_item_name, total_material_price, merged_items_df, contains_unpublished
+    return total_sum, total_packaged_volume, total_requested_price, top_item_name, total_material_price, merged_items_df, contains_unpublished, unpublished_items
 
 def prettify_num(number):
     pretty_num = f'{int(number):,}' # remove decimals to make ints pretty
@@ -475,7 +482,7 @@ def send_discord_message(message): # Required to send a ping as a separate messa
 def skip_discord_message(message):
     print("Skipped sending message. Do not forget about this! -----------------------------------------------------")
 
-def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished): # Create a new embed instance to be sent
+def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished, unpublished_items): # Create a new embed instance to be sent
     
     if (
     (discount > (good_profit_percentage/100)) and
@@ -503,7 +510,7 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     embed.add_field(name="Age", value=age_str, inline=True)
     embed.add_field(name="Most valuable item", value=top_item_name, inline=True)
     if contains_unpublished > 0:
-        embed.add_field(name="This contract contains unpublished items!", value=contains_unpublished, inline=True)
+        embed.add_field(name=f"Unpublished items ({contains_unpublished})", value=unpublished_items, inline=True,)
     # Add a link to the contract to be used in the in-game notepad
     embed.add_field(name="Paste to in-game notepad", value=f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>", inline=False)
     logging.info(f"Contract {contract_id} contained unpublished items:{contains_unpublished}. Price:{p_price} Jita buy:{p_jita_buy_value}")
@@ -534,6 +541,7 @@ async def really_send_embed():
         packaged_volume = row['packaged_volume']
         top_item_name = row['top_item_name']
         contains_unpublished = row['contains_unpublished']
+        unpublished_items = row["unpublished_items"]
 
         if top_item_name is not None:
             if is_ignored(top_item_name) == True:
@@ -566,7 +574,7 @@ async def really_send_embed():
             print("")
             
             #print(f"Attempting to send a message")
-            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished)
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished, unpublished_items)
             await send_embed(discord_webhook_url, embed)
             #print ("Message sent")
             n_good_profit_margin += 1
