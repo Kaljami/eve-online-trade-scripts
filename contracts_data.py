@@ -566,7 +566,7 @@ async def really_send_embed():
         packaged_volume = "%.2f" % packaged_volume
         if contains_unpublished > 0:
             print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}, Contains unpublished items!")
-            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished)
+            embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished, unpublished_items)
             await send_embed(discord_webhook_url, embed)
         if discount > (minimum_profit_percentage/100) and jita_buy_value > minimum_profit_absolute:
             print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}")
