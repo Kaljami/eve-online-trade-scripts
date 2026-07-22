@@ -158,7 +158,7 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
     #Master function to control async loop and process results
     sso_file = os.getenv("default_character_session_file")
     print(f'Loading {system_name} {order_type} orders using sso_file {sso_file}...')
-    names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, '1DQ1-A': 10000061, 'Tenerifis': 10000060}
+    names_to_id = {'Amarr': 10000043, 'Jita': 10000002, 'Dodixie': 10000032, 'Rens': 10000030, 'Hek': 10000042, 'Plex': 19000001, 'Tenerifis': 10000060}
     names_to_stn = {'Amarr': 60008494, 'Jita': 60003760, 'Dodixie': 60011866, 'Rens': 60004588, 'Hek': 60005686, '1DQ1-A': 1030049082711, 'Tenerifis': 1046664001931}
 
 
@@ -311,7 +311,7 @@ def update_caches(force=False):
             print("it's time to update prices!")
             logging.info("Starting to update price caches")
             sso_session = reuse_oauth_session(sso_file)
-            locations = ['Jita', 'Amarr', 'Tenerifis', 'Dodixie']
+            locations = ['Jita', 'Amarr', 'Hek', 'Dodixie', 'Plex']
             types = ['buy', 'sell']
 
             for location in locations:

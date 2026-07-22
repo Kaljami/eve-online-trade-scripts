@@ -177,6 +177,8 @@ def get_market_prices(station_name, order_type, cached):
     prices_dataframe = pd.DataFrame()
     market_prices = get_prices_from_station(station_name, order_type, cached) #set False to get updated prices
     prices_dataframe['price'] = market_prices
+    plex_prices = get_prices_from_station('Plex', order_type, cached, None)
+    prices_dataframe = pd.concat([prices_dataframe, plex_prices.to_frame(name='price')])
     if cached == False:
         print(f"{station_name} {order_type} order price data downloaded")
     return prices_dataframe
@@ -261,6 +263,7 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
                 total_material_prices.append(total_material_price)
                 items_dfs.append(items_df)
                 contains_unpublished_list.append(contains_unpublished)
+                unpublished_items_list.append(unpublished_items)
             except Exception as e:
                 print(f"Error while processing contract {ie_contracts_df['contract_id']}: {e} Future result: {future.result()}")
     print(f"Finished loading {region_name} contracts. Starting to create ie_contracts_df...")
