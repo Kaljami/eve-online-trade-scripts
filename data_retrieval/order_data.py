@@ -410,14 +410,14 @@ def update_appraisal_prices():
     for order_type in ['sell', 'buy']:
         jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
         amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
-        #tenerifis_sell_df = get_market_prices('Tenerifis', order_type, locations_cached, sso_session)
+        hek_sell_df = get_market_prices('Hek', order_type, locations_cached, sso_session)
         dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
         
         
         # TODO add dodixie and selection for locations
         print("Calculating best prices...")
         # List of DataFrames
-        sell_dfs = [jita_sell_df, amarr_sell_df, dodixie_sell_df]
+        sell_dfs = [jita_sell_df, amarr_sell_df, hek_sell_df, dodixie_sell_df]
         # Combine DataFrames based on 'type_id'
         combined_df = pd.concat(sell_dfs)
         combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
@@ -435,6 +435,7 @@ def update_appraisal_prices():
         agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
         agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
         agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
+        agg_df['price_hek'] = agg_df.index.map(lambda x: hek_sell_df.loc[x, 'price'] if x in hek_sell_df.index else None)
         
         cache_key = f'best_prices_{order_type}'
         print(f"Saving best_prices_{order_type} to redis cache. Result df was: \n{agg_df}")

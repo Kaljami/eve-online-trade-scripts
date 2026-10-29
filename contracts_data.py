@@ -38,10 +38,10 @@ db_database = os.getenv("mysql_database")
 db_database_fuzz = os.getenv("mysql_database_fuzzworks")
 
 # Contracts: 
-regions = ["The Forge", "Delve", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor", "Metropolis"]
-minimum_profit_percentage = 30
+regions = ["The Forge", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor", "Metropolis", "Heimatar"]
+minimum_profit_percentage = 25
 good_profit_percentage = 40
-minimum_profit_absolute = 80000000 # 80 million
+minimum_profit_absolute = 50000000 # 80 million
 good_profit_absolute = 1000000000 # 1 billion. Send notification if profit is above this treshold even if percentage is lower. 
 maximum_volume_br = 13000
 maximum_volume_dst = 60000
@@ -224,6 +224,7 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     print("Ignoring contracts that already exist in the database...")
     #existing_contract_ids_query = "SELECT contract_id FROM contracts;"
     #existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
+    
     ie_contracts_df = ie_contracts_df[~ie_contracts_df['contract_id'].isin(existing_contract_ids)] # remove all the contracts that already exist in the database
 
     print("Converting date strings to datetime objects...")
@@ -475,8 +476,8 @@ def send_discord_message(message): # Required to send a ping as a separate messa
         send_to_webhook.raise_for_status()
         sleep(1) # add a small delay to prevent hitting discord rate limit
     except requests.exceptions.HTTPError as err:
-        print(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message.")
-        logging.error(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message.")
+        print(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message. Message: {message}")
+        logging.error(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message. Message: {message}")
         sleep(15)
     else:
         print("Payload delivered successfully, code {}.".format(send_to_webhook.status_code))
@@ -492,15 +493,19 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
     (difference > minimum_profit_absolute) 
     or
     (difference > good_profit_absolute)
-    or
-    (contains_unpublished > 0)
     ):
         print ("found a good profit!", discount)
-        send_discord_message(f"<{discord_contract_notification_tag_id}> I found a good profit of {p_difference} ISK! It's on contract below :3") # tag the recipient in a separate message 
+        send_discord_message(f"<{discord_contract_notification_tag_id}> I found a good profit of {p_difference} ISK! It's on contract below :3")
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.green())
+    if contains_unpublished > 0:
+        print ("found unpublished items!", unpublished_items)
+        send_discord_message(f"<{discord_contract_notification_tag_id}> I found a contract with unpublished items: {unpublished_items} for {p_price} ISK!")
+        embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.red())
     if volume > 200000:
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.red())
     else:
+        print ("found a profit!", discount)
+        send_discord_message(f"I found a smaller profit of {p_difference} ISK! It's on contract below")
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.blue())
 
     # Add fields to the embed
@@ -659,7 +664,7 @@ query = f"""
         WHERE price < jita_buy_value
         OR contains_unpublished > 0
     ) AS recent_contracts
-    WHERE date_discovered >= '{current_timestamp}' - INTERVAL 9 MINUTE;
+    WHERE date_discovered >= '{current_timestamp}' - INTERVAL 10 MINUTE;
 """
 
 current_timestamp = datetime.now(timezone.utc)
@@ -667,13 +672,13 @@ current_timestamp = datetime.now(timezone.utc)
 result_df = pd.read_sql_query(query, con=engine)
 #print("New contracts priced below jita buy:\n", result_df)
 n_new_profitable_contracts = len(result_df.index)
-logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items.") 
+logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items. Starting to send Discord notifications.") 
 print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items. Starting to send Discord notifications.") #TODO separate into two independent counters
 #print("here's the result_df")
 #print(result_df)
 
 asyncio.run(main())
 
-update_expired_contracts()
+#update_expired_contracts()
 
 logging.info(f"Script finished successfully.")

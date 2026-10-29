@@ -1,10 +1,10 @@
 cache_all: 'false'
 hide_existing: 'false'
 
-source_hub: 'Jita'
+source_hub: 'Hek'
 source_order_type: 'sell'
 
-dest_hub: '1DQ1-A'
+dest_hub: 'Jita'
 dest_order_type: 'buy'
 
 days_history: '7'

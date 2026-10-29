@@ -136,7 +136,7 @@ def price_differences(settings, sso_session):
     print("summary:")
     print(str(summary))
     # Get historical volume and price for order refinement
-    volume, price = get_volume_price_history(settings.dest_hub, summary.index, settings.days_history, settings.cache_all)
+    volume, price, order_count = get_volume_price_history(settings.dest_hub, summary.index, settings.days_history, settings.cache_all)
 
     summary['Daily Volume'] = volume
 

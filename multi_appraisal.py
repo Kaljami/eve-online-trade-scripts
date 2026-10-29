@@ -61,14 +61,14 @@ def get_best_prices(order_type): # Deprecated, now handled by update_appraisal_p
 
     jita_sell_df = get_market_prices('Jita', order_type, locations_cached)
     amarr_sell_df = get_market_prices('Amarr', order_type, locations_cached)
-    tenerifis_sell_df = get_market_prices('Tenerifis', order_type, locations_cached)
+    hek_sell_df = get_market_prices('Hek', order_type, locations_cached)
     dodixie_sell_df = get_market_prices('Dodixie', order_type, locations_cached)
 
     
     # TODO add dodixie and selection for locations
     print("Calculating best prices...")
     # List of DataFrames
-    sell_dfs = [jita_sell_df, amarr_sell_df, tenerifis_sell_df, dodixie_sell_df]
+    sell_dfs = [jita_sell_df, amarr_sell_df, hek_sell_df, dodixie_sell_df]
     # Combine DataFrames based on 'type_id'
     combined_df = pd.concat(sell_dfs)
     combined_df.reset_index(inplace=True) # Reset index to ensure type_id becomes a column
@@ -82,12 +82,12 @@ def get_best_prices(order_type): # Deprecated, now handled by update_appraisal_p
     # Extract prices from original dataframes and add them to the aggregated dataframe
     agg_df['price_amarr'] = agg_df.index.map(lambda x: amarr_sell_df.loc[x, 'price'] if x in amarr_sell_df.index else None)
     agg_df['price_jita'] = agg_df.index.map(lambda x: jita_sell_df.loc[x, 'price'] if x in jita_sell_df.index else None)
-    agg_df['price_tenerifis'] = agg_df.index.map(lambda x: tenerifis_sell_df.loc[x, 'price'] if x in tenerifis_sell_df.index else None)
+    agg_df['price_hek'] = agg_df.index.map(lambda x: hek_sell_df.loc[x, 'price'] if x in hek_sell_df.index else None)
     agg_df['price_dodixie'] = agg_df.index.map(lambda x: dodixie_sell_df.loc[x, 'price'] if x in dodixie_sell_df.index else None)
 
     # Rename columns for clarity
     agg_df.columns = ['min_price', 'min_price_location', 'max_price', 'max_price_location',
-                        'price_amarr', 'price_jita', 'price_tenerifis', 'price_dodixie']
+                        'price_amarr', 'price_jita', 'price_hek', 'price_dodixie']
     agg_df.reset_index(inplace=True) # Reset index again just to be sure
     #print("agg_df:\n",agg_df)
 
@@ -185,7 +185,7 @@ def process_data():
     output_df['t_max_price'] = user_df['max_price'] * user_df['quantity'] 
     output_df['t_price_jita'] = user_df['price_jita'] * user_df['quantity'] 
     output_df['t_price_amarr'] = user_df['price_amarr'] * user_df['quantity']
-    output_df['t_price_tenerifis'] = user_df['price_tenerifis'] * user_df['quantity']
+    output_df['t_price_hek'] = user_df['price_hek'] * user_df['quantity']
     output_df['t_price_dodixie'] = user_df['price_dodixie'] * user_df['quantity']
 
     print("output_df is lookin like:\n", output_df)
@@ -204,7 +204,7 @@ def process_data():
         'best':output_df['best_price'].sum(skipna=False),
         'amarr':output_df['t_price_amarr'].sum(skipna=False),
         'jita':output_df['t_price_jita'].sum(skipna=False),
-        'tenerifis':output_df['t_price_tenerifis'].sum(skipna=False),
+        'hek':output_df['t_price_hek'].sum(skipna=False),
         'dodixie':output_df['t_price_dodixie'].sum(skipna=False),
         }
     
@@ -233,7 +233,7 @@ def process_data():
         total_jita=location_totals['jita'], 
         total_amarr=location_totals['amarr'],
         total_dodixie=location_totals['dodixie'],
-        total_tenerifis=location_totals['tenerifis'],
+        total_hek=location_totals['hek'],
         result=output_df,
         order_type = order_type,
         price_type = 'lowest' if user_wants_to =='buy' else 'highest'
