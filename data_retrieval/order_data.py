@@ -300,6 +300,7 @@ def check_metadata(data_type):
         return time_since
     except TypeError:
         print(f'No timestamp entry found for last {data_type} update')
+        return timedelta.max
 
 def update_caches(force=False):
     load_dotenv()
@@ -341,8 +342,6 @@ def update_caches(force=False):
     else:
         print(f"it's been {time_since_blueprints} since blueprint values were updated")
 
-# This is here because I got stuck in circular imports 😭
-# TODO maybe automate downloading new SDE versions from https://www.fuzzwork.co.uk/dump/latest/
 def update_blueprint_values():
 
     prices_dataframe_sell = get_prices_from_station('Jita','sell', True)
