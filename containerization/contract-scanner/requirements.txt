@@ -1,0 +1,14 @@
+aiohttp>=3.10,<4
+pandas>=2.2,<3
+PyYAML>=6,<7
+requests>=2.32,<3
+python-dotenv>=1,<2
+SQLAlchemy>=2.0,<3
+PyMySQL[rsa]>=1.1,<2
+mysql-connector-python>=9,<10
+discord.py>=2.4,<3
+nest-asyncio>=1.6,<2
+tqdm>=4.66,<5
+redis>=5,<7
+Flask>=3,<4
+gunicorn>=23,<24

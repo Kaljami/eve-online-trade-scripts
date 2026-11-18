@@ -1,5 +1,19 @@
 # eve-online-trade-scripts
 
+## Contract scanner Docker app
+
+The root Docker Compose stack runs the contract scanner and its web browser, with
+MariaDB (contract and static-data databases), Redis, automatic static-data setup,
+scheduled scans, and persistent storage. No Python installation, EVE login, or
+manually downloaded SDE files are needed on the host.
+
+See **[Docker and Unraid installation](containerization/contract-scanner/README.md)**
+for setup, configuration, updates, backups, and troubleshooting.
+
+This deployment uses public Jita and PLEX markets, not authenticated private
+structure orders. The other scripts below retain their standalone workflows;
+InfluxDB and Grafana are not required by the contract scanner.
+
 This is my fork of the original (abandoned) project by tomdml: https://github.com/tomdml/eve-online-trade-scanner
 
 Original features (updated for current API version):

@@ -1,40 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contract Browser Alpha</title>
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
-    <script>
-        function openContract(contractId) {
-            fetch(`/open_contract/${contractId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === "success") {
-                        console.log(data.message);
-                        // Optionally, display a success message to the user
-                    } else {
-                        console.error(data.message);
-                        // Optionally, display an error message to the user
-                    }
-                })
-                .catch(error => console.error('Error:', error));
-        }
-    </script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Contract {{ contract.contract_id }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Contents of contract {{ contract_id }}</h1>
-    {{ table | safe }}
-    <br>
-    {{ info_table | safe }}
-    <br>
-    <div class="centered">
-    
-    <form action="{{ url_for('index') }}" method="get">
-        <button type="submit" class="btn btn-link">Back to browsing</button>
-        <button type="button" class="btn btn-link open_ingame" onclick="openContract('{{ contract_id }}')">open in-game</button>
-    </form>
+<main>
+    <a href="{{ url_for('index') }}">Back to browsing</a>
+    <h1>Contract {{ contract.contract_id }}</h1>
+    <p>{{ contract.region_name }} / {{ contract.status }} / Issued {{ contract.date_issued }} UTC</p>
+    <p>Price: <strong>{{ contract.price | format_number }} ISK</strong> &middot;
+        Jita buy: <strong>{{ contract.jita_buy_value | format_number }} ISK</strong></p>
+    <p>Discovered {{ contract.date_discovered }} UTC / Scheduled expiry {{ contract.date_expired }} UTC</p>
+    <label>Copy this link into the EVE in-game notepad, then open it there:
+        <input class="contract-link" readonly aria-label="In-game contract link" onclick="this.select()"
+               value="&lt;url=contract:30000142//{{ contract.contract_id }}&gt;Contract {{ contract.contract_id }}&lt;/url&gt;">
+    </label>
+    <div class="table-container">
+        <table>
+            <thead><tr><th>Item</th><th>Quantity</th><th>Blueprint copy</th><th>Runs</th><th>Value (ISK)</th><th>Material cost (ISK)</th></tr></thead>
+            <tbody>
+            {% for item in items %}
+            <tr>
+                <td>{{ item.type_name or '-' }}</td><td class="num">{{ item.quantity | format_number }}</td>
+                <td>{{ 'Yes' if item.is_blueprint_copy == 1 else 'No' }}</td>
+                <td class="num">{{ item.runs | format_number }}</td>
+                <td class="num">{{ item.total_price | format_number }}</td>
+                <td class="num">{{ item.total_material_price | format_number }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="empty">No saved contents are available for this contract.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
     </div>
+</main>
 </body>
 </html>

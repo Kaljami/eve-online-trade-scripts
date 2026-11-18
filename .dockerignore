@@ -1,0 +1,13 @@
+**
+!contracts_data.py
+!contract_browser.py
+!data_processing/
+!data_processing/*.py
+!data_retrieval/
+!data_retrieval/*.py
+!render/
+!render/contract_browser/
+!render/contract_browser/**
+!containerization/
+!containerization/contract-scanner/
+!containerization/contract-scanner/**

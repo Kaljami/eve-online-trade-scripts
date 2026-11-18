@@ -7,10 +7,10 @@ import pandas as pd
 import json
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
 import redis
 from tqdm import tqdm
 from datetime import datetime, timezone, timedelta
-from data_retrieval.sso_utils import reuse_oauth_session
 from data_processing.sde_utils import get_item_names
 from data_retrieval.update_contract_database import update_contract_status
 import logging
@@ -26,7 +26,10 @@ def db_connection(fuzz=False):
         db_database = os.getenv("mysql_database_fuzzworks")
     else:
         db_database = os.getenv("mysql_database")
-    engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
+    engine = create_engine(URL.create(
+        'mysql+pymysql', username=db_user, password=db_password,
+        host=db_host, database=db_database,
+    ))
     return engine
 
 def redis_connection():
@@ -121,6 +124,7 @@ async def get_page(session, region_id, page, order_type):
         'order_type': order_type
     }
     res = await session.get(orders_url, params=params)
+    res.raise_for_status()
     return await res.json()
 
 def citadel_get_all_orders(station_id, pages, order_type, sso_session):
@@ -155,6 +159,19 @@ def get_all_orders(system_name, order_type, cached, sso_session):
 
 
 def get_all_orders_concurrent(system_name, order_type, sso_session):
+    if os.getenv("CONTRACT_SCANNER_PUBLIC_MARKETS") == "true":
+        region_id, station_id = {
+            'Jita': (10000002, 60003760),
+            'Plex': (19000001, None),
+        }[system_name]
+        pages = get_num_pages(region_id, order_type, None)
+        results = asyncio.run(async_get_all_orders(region_id, pages, order_type))
+        return [
+            order for page in results for order in page
+            if station_id is None or order.get('location_id') == station_id
+        ]
+
+    from data_retrieval.sso_utils import reuse_oauth_session
     #Master function to control async loop and process results
     sso_file = os.getenv("default_character_session_file")
     print(f'Loading {system_name} {order_type} orders using sso_file {sso_file}...')
@@ -248,7 +265,7 @@ def get_orders_from_cache(system_name, order_type):
         return pickle.loads(cached_data)
     else:
         print (f"That failed. Getting {system_name} {order_type} orders from local pickle file as last resort")
-        cache_file = os.path.join('cache', f'{system_name}_orders_{order_type}.pkl')
+        cache_file = os.path.join('cache', f'{cache_key}.pkl')
         with open(cache_file, 'rb') as fp:
             return pickle.load(fp)
 
@@ -263,6 +280,7 @@ def get_average_prices(cached):
         print (f"Getting {system_name} {order_type} prices from ESI")
         avg_prices_url = f"https://esi.evetech.net/latest/markets/prices/?datasource=tranquility"
         avg_prices_response = requests.get(avg_prices_url)
+        avg_prices_response.raise_for_status()
         avg_prices_data = avg_prices_response.json()
         save_orders_to_cache(system_name, avg_prices_data, order_type)
     avg_prices_dataframe = pd.DataFrame(avg_prices_data)
@@ -305,6 +323,11 @@ def check_metadata(data_type):
 
 def update_caches(force=False):
     load_dotenv()
+    if os.getenv("CONTRACT_SCANNER_PUBLIC_MARKETS") == "true":
+        update_scanner_caches(force)
+        return
+
+    from data_retrieval.sso_utils import reuse_oauth_session
     sso_file = os.getenv("default_character_session_file")
     time_since_prices = check_metadata('prices')
     if time_since_prices > timedelta(hours=2) or force == True:
@@ -342,6 +365,31 @@ def update_caches(force=False):
         update_metadata(blueprints=True)
     else:
         print(f"it's been {time_since_blueprints} since blueprint values were updated")
+
+def update_scanner_caches(force=False):
+    prices_changed = force or check_metadata('prices') > timedelta(hours=2)
+    if prices_changed:
+        for location in ['Jita', 'Plex']:
+            for order_type in ['buy', 'sell']:
+                orders = get_all_orders_concurrent(location, order_type, None)
+                if not orders:
+                    raise RuntimeError(f"No public {order_type} orders returned for {location}")
+                save_orders_to_cache(location, orders, order_type)
+        get_average_prices(False)
+        update_metadata(prices=True)
+
+    if force or check_metadata('blueprints') > timedelta(hours=24):
+        update_blueprint_values()
+        update_metadata(blueprints=True)
+
+    # Avoid downloading the large EVE Ref archive just to expire known contracts.
+    engine = db_connection()
+    with engine.begin() as connection:
+        from sqlalchemy import text
+        connection.execute(text(
+            "UPDATE contracts SET status = 'expired' "
+            "WHERE status = 'active' AND date_expired <= UTC_TIMESTAMP()"
+        ))
 
 def update_blueprint_values():
 
@@ -400,9 +448,11 @@ def update_blueprint_values():
         print(e)
         print(f"Error saving blueprint values to database. Aborting.")
         logging.error(f"Error saving blueprint values to database. Aborting. \n{e}")
+        raise
 
 
 def update_appraisal_prices():
+    from data_retrieval.sso_utils import reuse_oauth_session
     locations_cached = False # market orders were already fetched previously
     print("Starting update_appraisal_prices ----------")
     sso_file = os.getenv("default_character_session_file")

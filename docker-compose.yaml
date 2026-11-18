@@ -1,18 +1,110 @@
-version: '3'
-services:
-  multi_appraisal:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    command: python ./multi_appraisal.py
-    ports:
-      - "5000:5000"
-    environment:
-      redis_host: ""
-      mysql_user: ''
-      mysql_password: ''
-      mysql_host: ''
-      mysql_database: 'eve_data'
-      mysql_database_fuzzworks: 'fuzz'
+name: eve-contract-scanner
 
-# mysql_database_fuzzworks is a separate database for static data imported from fuzzworks
+x-app: &app
+  image: eve-contract-scanner:local
+  pull_policy: never
+  environment: &app-environment
+    mysql_host: database
+    mysql_user: scanner
+    mysql_password: ${SCANNER_DB_PASSWORD:?Set SCANNER_DB_PASSWORD in scanner.env}
+    mysql_database: eve_data
+    mysql_database_fuzzworks: fuzz
+    redis_host: redis
+    CONTRACT_SCANNER_PUBLIC_MARKETS: "true"
+    TZ: UTC
+  init: true
+
+services:
+  database:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${SCANNER_DB_ROOT_PASSWORD:?Set SCANNER_DB_ROOT_PASSWORD in scanner.env}
+      MARIADB_DATABASE: eve_data
+      MARIADB_USER: scanner
+      MARIADB_PASSWORD: ${SCANNER_DB_PASSWORD:?Set SCANNER_DB_PASSWORD in scanner.env}
+      TZ: UTC
+    volumes:
+      - ${APPDATA_PATH:-./appdata}/mysql:/var/lib/mysql
+      - ./containerization/contract-scanner/databases.sql:/docker-entrypoint-initdb.d/01-databases.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${APPDATA_PATH:-./appdata}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  setup:
+    <<: *app
+    build:
+      context: .
+      dockerfile: containerization/contract-scanner/Dockerfile
+    restart: "no"
+    command: ["python", "containerization/contract-scanner/service.py", "setup"]
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${APPDATA_PATH:-./appdata}/static:/app/static
+      - ${APPDATA_PATH:-./appdata}/cache:/app/cache
+      - ${APPDATA_PATH:-./appdata}/logs:/app/logs
+
+  scanner:
+    <<: *app
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      <<: *app-environment
+      SCAN_INTERVAL_SECONDS: ${SCAN_INTERVAL_SECONDS:-600}
+      SCANNER_REGIONS: ${SCANNER_REGIONS:-}
+      MINIMUM_PROFIT_PERCENTAGE: ${MINIMUM_PROFIT_PERCENTAGE:-25}
+      GOOD_PROFIT_PERCENTAGE: ${GOOD_PROFIT_PERCENTAGE:-40}
+      MINIMUM_PROFIT_ABSOLUTE: ${MINIMUM_PROFIT_ABSOLUTE:-50000000}
+      GOOD_PROFIT_ABSOLUTE: ${GOOD_PROFIT_ABSOLUTE:-1000000000}
+      discord_webhook_url: ${SCANNER_DISCORD_WEBHOOK_URL:-}
+      discord_contract_notification_tag_id: ${SCANNER_DISCORD_TAG_ID:-}
+      discord_sender_name: ${SCANNER_DISCORD_SENDER_NAME:-EVE Contract Scanner}
+      discord_sender_icon_url: ${SCANNER_DISCORD_ICON_URL:-}
+      ignore_list_path: /app/config/ignore-list.yaml
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${APPDATA_PATH:-./appdata}/static:/app/static
+      - ${APPDATA_PATH:-./appdata}/cache:/app/cache
+      - ${APPDATA_PATH:-./appdata}/logs:/app/logs
+      - ./containerization/contract-scanner/ignore-list.yaml:/app/config/ignore-list.yaml:ro
+
+  browser:
+    <<: *app
+    restart: unless-stopped
+    command: ["gunicorn", "--bind", "0.0.0.0:5003", "--workers", "2", "--access-logfile", "-", "--error-logfile", "-", "contract_browser:app"]
+    ports:
+      - "${WEB_BIND_IP:-0.0.0.0}:${WEB_PORT:-5003}:5003"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5003/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

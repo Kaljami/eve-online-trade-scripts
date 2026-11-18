@@ -121,6 +121,8 @@ celerybeat.pid
 
 # Environments
 .env
+scanner.env
+appdata/
 .venv
 env/
 venv/

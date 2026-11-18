@@ -4,6 +4,7 @@ import pandas as pd
 import yaml
 import json
 from sqlalchemy import create_engine, MetaData, Table
+from sqlalchemy.engine import URL
 from dotenv import load_dotenv
 import redis
 
@@ -18,7 +19,10 @@ def db_connection(fuzz=False):
         db_database = os.getenv("mysql_database_fuzzworks")
     else:
         db_database = os.getenv("mysql_database")
-    engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
+    engine = create_engine(URL.create(
+        'mysql+pymysql', username=db_user, password=db_password,
+        host=db_host, database=db_database,
+    ))
     return engine
 
 def redis_connection():

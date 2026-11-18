@@ -7,6 +7,7 @@ import pandas as pd
 import nest_asyncio
 import yaml
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import URL
 from tqdm import tqdm
 from data_retrieval.order_data import get_prices_from_station, get_average_prices, update_caches, redis_connection
 from data_retrieval.update_expired_contracts import update_expired_contracts
@@ -19,6 +20,7 @@ from discord import Embed
 discord.VoiceClient.warn_nacl = False # gets rid of warning in logging
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import warnings
@@ -39,10 +41,12 @@ db_database_fuzz = os.getenv("mysql_database_fuzzworks")
 
 # Contracts: 
 regions = ["The Forge", "Domain", "Placid", "Sinq Laison", "Lonetrek", "The Citadel", "Essence", "Querious", "Fountain", "Period Basis", "Aridia", "Syndicate", "Genesis", "Verge Vendor", "Metropolis", "Heimatar"]
-minimum_profit_percentage = 25
-good_profit_percentage = 40
-minimum_profit_absolute = 50000000 # 80 million
-good_profit_absolute = 1000000000 # 1 billion. Send notification if profit is above this treshold even if percentage is lower. 
+if os.getenv("SCANNER_REGIONS"):
+    regions = [region.strip() for region in os.environ["SCANNER_REGIONS"].split(",")]
+minimum_profit_percentage = float(os.getenv("MINIMUM_PROFIT_PERCENTAGE", "25"))
+good_profit_percentage = float(os.getenv("GOOD_PROFIT_PERCENTAGE", "40"))
+minimum_profit_absolute = float(os.getenv("MINIMUM_PROFIT_ABSOLUTE", "50000000"))
+good_profit_absolute = float(os.getenv("GOOD_PROFIT_ABSOLUTE", "1000000000"))
 maximum_volume_br = 13000
 maximum_volume_dst = 60000
 maximum_volume_freighter = 500000
@@ -66,10 +70,23 @@ pd.set_option('display.float_format', lambda x: '%.2f' % x) # disable scientific
 
 ### SETTINGS END
 
-logging.basicConfig(filename='logs/contracts_data.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+os.makedirs('logs', exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        RotatingFileHandler('logs/contracts_data.log', maxBytes=10 * 1024 * 1024, backupCount=3),
+        logging.StreamHandler(),
+    ],
+)
 load_dotenv()
-engine = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database}')
-engine_fuzz = create_engine(f'mysql+pymysql://{db_user}:{db_password}@{db_host}/{db_database_fuzz}')
+engine = create_engine(URL.create(
+    'mysql+pymysql', username=db_user, password=db_password,
+    host=db_host, database=db_database,
+))
+engine_fuzz = create_engine(URL.create(
+    'mysql+pymysql', username=db_user, password=db_password,
+    host=db_host, database=db_database_fuzz,
+))
 intents = discord.Intents.default() 
 intents.members = True
 intents.message_content = True
@@ -113,6 +130,7 @@ def get_num_pages(region_id):
     contracts_url = f'https://esi.evetech.net/latest/contracts/public/{region_id}/'
     params = {}
     res = requests.get(contracts_url, params=params)
+    res.raise_for_status()
     return int(res.headers['X-Pages'])
 
 async def get_page(session, region_id, page):
@@ -122,6 +140,7 @@ async def get_page(session, region_id, page):
         'page': page
     }
     res = await session.get(contracts_url, params=params)
+    res.raise_for_status()
     return await res.json()
 
 
@@ -157,6 +176,7 @@ def get_all_contracts_concurrent(region_name):
         return [contract for page in contracts for contract in page]
     except Exception as e:
         print(e)
+        raise
 
 
 def get_all_contracts(region_name, cached):
@@ -219,6 +239,9 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     #print(f'Got {len(contracts_json)} contracts!')
     logging.debug(f'Got {len(contracts_json)} contracts in {region_name}')
     contracts_df = pd.DataFrame.from_records(contracts_json)
+    if contracts_df.empty:
+        logging.info(f"No contracts returned for {region_name}")
+        return pd.DataFrame(), pd.DataFrame()
     ie_contracts_df = contracts_df[contracts_df['type'] == 'item_exchange'] # ie = item exchange contracts only
 
     print("Ignoring contracts that already exist in the database...")
@@ -226,6 +249,9 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     #existing_contract_ids = pd.read_sql_query(existing_contract_ids_query, con=engine)['contract_id'].tolist()
     
     ie_contracts_df = ie_contracts_df[~ie_contracts_df['contract_id'].isin(existing_contract_ids)] # remove all the contracts that already exist in the database
+    if ie_contracts_df.empty:
+        logging.info(f"No new item-exchange contracts found in {region_name}")
+        return ie_contracts_df, pd.DataFrame()
 
     print("Converting date strings to datetime objects...")
     ie_contracts_df['date_issued'] = ie_contracts_df['date_issued'].apply(convert_date_string_to_datetime)
@@ -249,6 +275,9 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     # Multithreading for fetching data
     
     print("Calculating contract values and item prices...")
+    # pandas builds index lookup engines lazily and not thread-safely; build them before threading.
+    for frame in (prices_dataframe, packaged_volumes_dataframe, published_status_df, blueprint_values_df, prices_dataframe_average):
+        frame.index.get_indexer(frame.index[:1])
     with ThreadPoolExecutor() as executor:
         
         futures = [executor.submit(process_contract, contract_id, prices_dataframe) for contract_id in ie_contracts_df['contract_id']]
@@ -590,7 +619,7 @@ async def really_send_embed():
 
     logging.info(f"{n_good_profit_margin} of the contracts had profit margin above {minimum_profit_percentage}% and buy value above {minimum_profit_absolute} ISK")
 
-def save_dataframe_to_db(df, table_name, engine, region_name):
+def save_dataframe_to_db(df, table_name, engine, region_name, items_df=None):
     """
     Saves a dataframe to the database with retry logic and connection handling
     """
@@ -604,6 +633,8 @@ def save_dataframe_to_db(df, table_name, engine, region_name):
                 # Begin a transaction
                 with connection.begin():
                     df.to_sql(table_name, con=connection, if_exists='append', index=False)
+                    if items_df is not None and not items_df.empty:
+                        items_df.to_sql('contract_items', con=connection, if_exists='append', index=False)
                     logging.info(f"Dataframe of {region_name} {table_name} saved to database")
                     return True
                     
@@ -617,7 +648,7 @@ def save_dataframe_to_db(df, table_name, engine, region_name):
                 error_msg = f"Failed to save {region_name} {table_name} after {max_retries} attempts. Error: {str(e)}"
                 print(error_msg)
                 logging.error(error_msg)
-                return False
+                raise
                 
             # Wait before retrying, with exponential backoff
             time.sleep(2 ** retry_count)
@@ -625,60 +656,51 @@ def save_dataframe_to_db(df, table_name, engine, region_name):
 async def main():
     await really_send_embed()
 
-update_caches() # Prices updated by default every 2 hours. Blueprint values every 24 hours. 
-packaged_volumes_dataframe = load_packaged_volumes()
-rig_type_ids = get_rig_type_ids()
-blueprint_values_df = get_blueprint_profits()
-type_names = get_item_names()
-blueprint_type_ids = get_all_blueprint_type_ids()
-published_status_df = load_published_types()
+if __name__ == '__main__':
+    update_caches() # Prices updated by default every 2 hours. Blueprint values every 24 hours.
+    packaged_volumes_dataframe = load_packaged_volumes()
+    rig_type_ids = get_rig_type_ids()
+    blueprint_values_df = get_blueprint_profits()
+    type_names = get_item_names()
+    blueprint_type_ids = get_all_blueprint_type_ids()
+    published_status_df = load_published_types()
 
-prices_dataframe_sell = get_market_prices("Jita", 'sell', use_cached_prices)
-#print(prices_dataframe_sell)
-prices_dataframe_buy = get_market_prices("Jita", 'buy', use_cached_prices)
-#print(prices_dataframe_buy)
-prices_dataframe_average = get_average_prices(use_cached_prices)
-#print(prices_dataframe_average)
+    prices_dataframe_sell = get_market_prices("Jita", 'sell', use_cached_prices)
+    prices_dataframe_buy = get_market_prices("Jita", 'buy', use_cached_prices)
+    prices_dataframe_average = get_average_prices(use_cached_prices)
 
-existing_contract_ids = get_contracts_from_sql()
+    existing_contract_ids = get_contracts_from_sql()
 
-current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-for region in regions:
-    ie_contracts_df, region_items_df = get_all_contracts_from_region(region, False, existing_contract_ids)
-    ie_contracts_df['date_discovered'] = current_timestamp # uses local time
-    # Save contracts
-    if save_dataframe_to_db(ie_contracts_df, 'contracts', engine, region):
-        # Only try to save items if contracts were saved successfully
-        if len(region_items_df) > 0:  # Check if there are items to save
-            save_dataframe_to_db(region_items_df, 'contract_items', engine, region)
-            
-print("All selected regions checked and new contracts saved to database")
+    current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for region in regions:
+        ie_contracts_df, region_items_df = get_all_contracts_from_region(region, False, existing_contract_ids)
+        if ie_contracts_df.empty:
+            continue
+        ie_contracts_df['date_discovered'] = current_timestamp
+        save_dataframe_to_db(ie_contracts_df, 'contracts', engine, region, items_df=region_items_df)
 
+    print("All selected regions checked and new contracts saved to database")
 
-# Run a SQL query to select entries where 'price' is lower than 'jita_buy_value'
-query = f"""
-    SELECT *
-    FROM (
+    query = f"""
         SELECT *
-        FROM contracts
-        WHERE price < jita_buy_value
-        OR contains_unpublished > 0
-    ) AS recent_contracts
-    WHERE date_discovered >= '{current_timestamp}' - INTERVAL 10 MINUTE;
-"""
+        FROM (
+            SELECT *
+            FROM contracts
+            WHERE price < jita_buy_value
+            OR contains_unpublished > 0
+        ) AS recent_contracts
+        WHERE date_discovered >= '{current_timestamp}' - INTERVAL 10 MINUTE;
+    """
 
-current_timestamp = datetime.now(timezone.utc)
+    current_timestamp = datetime.now(timezone.utc)
+    result_df = pd.read_sql_query(query, con=engine)
+    n_new_profitable_contracts = len(result_df.index)
+    logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items.")
+    print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items.")
 
-result_df = pd.read_sql_query(query, con=engine)
-#print("New contracts priced below jita buy:\n", result_df)
-n_new_profitable_contracts = len(result_df.index)
-logging.info(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items. Starting to send Discord notifications.") 
-print(f"This run found {n_new_profitable_contracts} new contracts priced below Jita buy price or with unpublished items. Starting to send Discord notifications.") #TODO separate into two independent counters
-#print("here's the result_df")
-#print(result_df)
+    if discord_webhook_url:
+        asyncio.run(main())
+    else:
+        logging.info("Discord notifications disabled: no discord_webhook_url configured.")
 
-asyncio.run(main())
-
-#update_expired_contracts()
-
-logging.info(f"Script finished successfully.")
+    logging.info("Script finished successfully.")
