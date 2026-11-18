@@ -224,6 +224,7 @@ def get_all_orders_concurrent(system_name, order_type, sso_session):
 
 
 def save_orders_to_cache(system_name, orders, order_type): # Save to redis, and pickle for redundancy
+    os.makedirs('cache', exist_ok=True)
     cache_key = f'orders_{system_name}_{order_type}'
     try:
         print(f"Saving {system_name} {order_type} orders to redis cache")
