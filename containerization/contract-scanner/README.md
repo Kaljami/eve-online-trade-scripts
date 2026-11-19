@@ -259,6 +259,21 @@ docker compose --env-file scanner.env up -d scanner
   filters, select "Any time", and check the scanner logs.
 - Health endpoint: `http://YOUR_SERVER_IP:5003/healthz` returns `{"status":"ok"}`
   only if the browser can connect to MariaDB.
+- Slow scans or Discord notifications: run
+
+  ```sh
+  docker compose --env-file scanner.env run --rm --no-deps scanner python containerization/contract-scanner/service.py network-check
+  ```
+
+  DNS lookups and connections should take well under a second. A delay of about
+  5 seconds usually means the host's DNS configuration has an unreachable resolver
+  or broken IPv6. In Unraid, check **Settings > Network Settings** DNS servers
+  (for example, use your router or `1.1.1.1`). If only IPv4+IPv6 lookups are slow,
+  disable IPv6 there or for Docker. The scanner reuses connections, so only the first
+  request per worker pays this cost, but other containers are affected too.
+- Discord allows only about 30 webhook messages per minute per channel. Large
+  notification batches, such as the first scan of new regions, are delayed
+  automatically rather than dropped.
 - This is an **unauthenticated LAN-only browser**, not an Internet-facing service.
   Do not forward its port publicly. Use a VPN or an authenticated TLS reverse
   proxy for remote access. The containers trust their private Compose network;

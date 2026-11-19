@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import warnings
 from functools import reduce
 import fnmatch
+import threading
 import tarfile
 import mysql.connector
 
@@ -92,6 +93,16 @@ intents.members = True
 intents.message_content = True
 client = discord.Client(intents=intents)
 
+# Reuse HTTP connections: opening a new connection (DNS + TCP + TLS) for every request is very slow on some hosts.
+_thread_local = threading.local()
+discord_session = requests.Session()
+HTTP_TIMEOUT = (10, 60)
+
+def esi_session():
+    if not hasattr(_thread_local, 'session'):
+        _thread_local.session = requests.Session()
+    return _thread_local.session
+
 def load_ignore_list(path=None):
     """Load the list of item names/patterns to ignore from an external YAML file.
 
@@ -129,7 +140,7 @@ def get_num_pages(region_id):
     """Use requests to grab a page of contracts, returning the X-Pages header from the response."""
     contracts_url = f'https://esi.evetech.net/latest/contracts/public/{region_id}/'
     params = {}
-    res = requests.get(contracts_url, params=params)
+    res = esi_session().get(contracts_url, params=params, timeout=HTTP_TIMEOUT)
     res.raise_for_status()
     return int(res.headers['X-Pages'])
 
@@ -276,7 +287,7 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
     
     print("Calculating contract values and item prices...")
     # pandas builds index lookup engines lazily and not thread-safely; build them before threading.
-    for frame in (prices_dataframe, packaged_volumes_dataframe, published_status_df, blueprint_values_df, prices_dataframe_average):
+    for frame in (prices_dataframe, packaged_volumes_dataframe, published_status_df, blueprint_values_df, prices_dataframe_average, type_names):
         frame.index.get_indexer(frame.index[:1])
     with ThreadPoolExecutor() as executor:
         
@@ -311,8 +322,10 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
         print(f"No new contracts found in {region_name}.")
         return ie_contracts_df, pd.DataFrame()
     try:
-        print(f"Merging {len(items_dfs)} item dataframes...")
-        region_items_df = merge_dfs_in_chunks(items_dfs)
+        print(f"Combining {len(items_dfs)} item dataframes...")
+        # Each dataframe holds a different contract's items, so concatenation is equivalent to the old
+        # all-column outer merges, without their quadratic cost.
+        region_items_df = pd.concat(items_dfs, ignore_index=True)
     except Exception as e:
         print(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
         logging.info(f"Failed to create a region_items_df for {region}. Likely because there were no new contracts. Stats for ie_contracts_df: {ie_contracts_df.shape}")
@@ -321,27 +334,6 @@ def get_all_contracts_from_region(region_name, cached, existing_contract_ids) ->
 
     return ie_contracts_df, region_items_df
 
-def merge_dfs(left, right):
-    try:
-        return pd.merge(left, right, how='outer')
-    except Exception as e:
-        print(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
-        logging.error(f"failed to return merged dataframes. Suspects in question are {left} and {right}")
-
-def merge_dfs_in_chunks(dfs, chunk_size=20, desc="Merging dataframes in chunks"):
-    # Split the list of dataframes into smaller chunks
-    chunks = [dfs[i:i + chunk_size] for i in range(0, len(dfs), chunk_size)]
-    
-    merged_chunks = []
-    
-    # Merge each chunk of dataframes with progress tracking
-    for chunk in tqdm(chunks, desc=desc, unit="chunk"):
-        merged_chunk = reduce(merge_dfs, chunk)
-        merged_chunks.append(merged_chunk)
-    
-    # Finally, merge all the merged chunks together with progress tracking
-    final_result = reduce(merge_dfs, tqdm(merged_chunks, desc="Merging final chunks", unit="chunk"))
-    return final_result
 
 
 def get_blueprint_profits(): 
@@ -357,7 +349,7 @@ def get_blueprint_profits():
 def get_contract_items(contract_id):
     try:
         contract_items_url = f'https://esi.evetech.net/latest/contracts/public/items/{contract_id}/'
-        res = requests.get(contract_items_url)
+        res = esi_session().get(contract_items_url, timeout=HTTP_TIMEOUT)
         #print(res.status_code)
         #print(res.headers)
         #print(res.json())
@@ -484,39 +476,31 @@ def num_to_string(number):
     return formatted_number
 
 
-async def send_embed(webhook_url, embed):
-    try: 
-        async with aiohttp.ClientSession() as session:
-            webhook = discord.Webhook.from_url(webhook_url, session=session)
-            await webhook.send(embed=embed, username=sender_name, avatar_url=sender_icon_url)
+def discord_webhook():
+    # SyncWebhook waits automatically when Discord reports a rate limit instead of dropping the message.
+    return discord.SyncWebhook.from_url(discord_webhook_url, session=discord_session)
+
+def send_embed(webhook_url, embed):
+    try:
+        discord_webhook().send(embed=embed, username=sender_name, avatar_url=sender_icon_url)
     except Exception as e:
         logging.error(f"Error {e} while sending embed: {embed}")
 
 def send_discord_message(message): # Required to send a ping as a separate message because embeds can't have tags 
-    #print(f"Attempting to send a message")
     logging.info(f"Attempting to send a message: {message}")
-    payload = {
-        "content" : message,
-        "username" : sender_name,
-        "avatar_url": sender_icon_url
-    }
-    send_to_webhook = requests.post(discord_webhook_url, json = payload)
     try:
-        send_to_webhook.raise_for_status()
-        sleep(1) # add a small delay to prevent hitting discord rate limit
-    except requests.exceptions.HTTPError as err:
-        print(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message. Message: {message}")
-        logging.error(f"Error on send_discord_message(): {err}. Waiting 15 seconds before next message. Message: {message}")
-        sleep(15)
+        discord_webhook().send(content=message, username=sender_name, avatar_url=sender_icon_url)
+    except Exception as err:
+        print(f"Error on send_discord_message(): {err}. Message: {message}")
+        logging.error(f"Error on send_discord_message(): {err}. Message: {message}")
     else:
-        print("Payload delivered successfully, code {}.".format(send_to_webhook.status_code))
-        logging.debug("Notification message delivered successfully, code {}.".format(send_to_webhook.status_code))
+        print("Payload delivered successfully.")
 
 def skip_discord_message(message):
     print("Skipped sending message. Do not forget about this! -----------------------------------------------------")
 
 def format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished, unpublished_items): # Create a new embed instance to be sent
-    
+    embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.blue())
     if (
     (discount > (good_profit_percentage/100)) and
     (difference > minimum_profit_absolute) 
@@ -532,10 +516,6 @@ def format_discord_embed(discount, discount_pct, difference, str_difference, vol
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.red())
     if volume > 200000:
         embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.red())
-    else:
-        print ("found a profit!", discount)
-        send_discord_message(f"I found a smaller profit of {p_difference} ISK! It's on contract below")
-        embed = Embed(title=f"{str_difference} profit in {region_name}", color=discord.Color.blue())
 
     # Add fields to the embed
     embed.add_field(name="Contract ID", value=contract_id, inline=True)
@@ -604,7 +584,7 @@ async def really_send_embed():
         if contains_unpublished > 0:
             print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}, Contains unpublished items!")
             embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished, unpublished_items)
-            await send_embed(discord_webhook_url, embed)
+            send_embed(discord_webhook_url, embed)
         if discount > (minimum_profit_percentage/100) and jita_buy_value > minimum_profit_absolute:
             print(f"Contract ID: {contract_id}, Price: {p_price}, Jita Buy Value: {p_jita_buy_value}, Discount: {discount_pct}, Profit: {p_difference}, Volume: {p_packaged_volume} m3, Age: {age_str}")
             print(f"<url=contract:30000142//{contract_id}>Contract {contract_id}</url>")
@@ -612,7 +592,7 @@ async def really_send_embed():
             
             #print(f"Attempting to send a message")
             embed = format_discord_embed(discount, discount_pct, difference, str_difference, volume, packaged_volume, p_packaged_volume, region_name, contract_id, p_price, p_difference, age_str, p_jita_buy_value, top_item_name, contains_unpublished, unpublished_items)
-            await send_embed(discord_webhook_url, embed)
+            send_embed(discord_webhook_url, embed)
             #print ("Message sent")
             n_good_profit_margin += 1
 
@@ -661,7 +641,7 @@ if __name__ == '__main__':
     packaged_volumes_dataframe = load_packaged_volumes()
     rig_type_ids = get_rig_type_ids()
     blueprint_values_df = get_blueprint_profits()
-    type_names = get_item_names()
+    type_names = pd.Series(get_item_names()) # A Series is mapped directly; a dict would be converted on every contract
     blueprint_type_ids = get_all_blueprint_type_ids()
     published_status_df = load_published_types()
 

@@ -115,6 +115,25 @@ class ScannerPersistenceTests(unittest.TestCase):
         self.assertTrue(contracts.empty)
         self.assertTrue(items.empty)
 
+    def test_mid_range_profit_gets_embed_without_extra_ping(self):
+        with patch.object(contracts_data, "send_discord_message") as message:
+            embed = contracts_data.format_discord_embed(
+                0.3, "30.0%", 60_000_000, "60 million", 10, "10.00", "10", "Domain", 1,
+                "140,000,000", "60,000,000", "1 days", "200,000,000", "Item", 0, "",
+            )
+        self.assertEqual(embed.color, contracts_data.discord.Color.blue())
+        message.assert_not_called()
+
+    def test_discord_messages_reuse_one_http_session(self):
+        webhook = MagicMock()
+        with patch.object(contracts_data, "discord_webhook_url", "https://discord.com/api/webhooks/1/token"), \
+                patch.object(contracts_data.discord.SyncWebhook, "from_url", return_value=webhook) as from_url:
+            contracts_data.send_discord_message("one")
+            contracts_data.send_embed(None, contracts_data.Embed(title="two"))
+        for call in from_url.call_args_list:
+            self.assertIs(call.kwargs["session"], contracts_data.discord_session)
+        self.assertEqual(webhook.send.call_count, 2)
+
 
 class BrowserTests(unittest.TestCase):
     def setUp(self):

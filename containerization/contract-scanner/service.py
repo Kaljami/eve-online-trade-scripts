@@ -153,13 +153,34 @@ def run_scanner(once=False):
         stopping.wait(interval)
 
 
+def network_check():
+    import socket
+    import time
+    for host in ("esi.evetech.net", "discord.com"):
+        for family, name in ((socket.AF_UNSPEC, "IPv4+IPv6"), (socket.AF_INET, "IPv4 only")):
+            started = time.monotonic()
+            try:
+                count = len(socket.getaddrinfo(host, 443, family, socket.SOCK_STREAM))
+                logging.info("%s DNS (%s): %.2fs, %s addresses", host, name, time.monotonic() - started, count)
+            except OSError as error:
+                logging.error("%s DNS (%s) failed after %.2fs: %s", host, name, time.monotonic() - started, error)
+        started = time.monotonic()
+        try:
+            socket.create_connection((host, 443), timeout=15).close()
+            logging.info("%s TCP connect: %.2fs", host, time.monotonic() - started)
+        except OSError as error:
+            logging.error("%s TCP connect failed after %.2fs: %s", host, time.monotonic() - started, error)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Initialize and run the EVE contract scanner")
-    parser.add_argument("command", choices=["setup", "run", "scan-once"])
+    parser.add_argument("command", choices=["setup", "run", "scan-once", "network-check"])
     parser.add_argument("--refresh-static", action="store_true")
     args = parser.parse_args()
     if args.command == "setup":
         setup(refresh=args.refresh_static)
+    elif args.command == "network-check":
+        network_check()
     else:
         run_scanner(once=args.command == "scan-once")
