@@ -22,6 +22,11 @@ tbody tr:hover { background: #22334c; }
 .profit { color: #83e3b2; }
 .empty { padding: 2rem; text-align: center; color: #acbbcf; }
 .nowrap { white-space: nowrap; }
+th a.sort { color: inherit; text-decoration: none; display: block; white-space: nowrap; }
+th a.sort:hover { color: #c6e8ff; text-decoration: underline; }
+th[aria-sort] { background: #24344d; }
+.search { flex: 1 1 18rem; }
+.unpublished { margin-top: .3rem; font-size: .8rem; color: #ffb37a; }
 nav { display: flex; justify-content: center; gap: 2rem; padding: 1rem; }
 .contract-link { width: min(100%, 800px); box-sizing: border-box; font-family: monospace; }
 @media (max-width: 600px) {

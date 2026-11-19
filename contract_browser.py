@@ -19,7 +19,27 @@ engine = create_engine(URL.create(
     database=os.getenv("mysql_database"),
 ), pool_pre_ping=True)
 PAGE_SIZE = 100
-FILTER_FIELDS = ("selected_region", "min_profit", "max_volume", "all_blueprints", "status", "days")
+FILTER_FIELDS = (
+    "selected_region", "min_profit", "max_volume", "all_blueprints", "status", "days",
+    "item", "unpublished", "sort", "order",
+)
+# Column key -> (SQL expression, default direction when first clicked)
+SORT_COLUMNS = {
+    "contract": ("contract_id", "desc"),
+    "item": ("top_item_name", "asc"),
+    "region": ("region_name", "asc"),
+    "price": ("price", "desc"),
+    "jita_buy": ("jita_buy_value", "desc"),
+    "profit": ("(jita_buy_value - price)", "desc"),
+    # Free contracts have unlimited ROI, so they sort above every priced contract.
+    "roi": ("CASE WHEN price > 0 THEN (jita_buy_value - price) / price ELSE 1e18 END", "desc"),
+    "material": ("total_material_price", "desc"),
+    "volume": ("packaged_volume", "asc"),
+    "status": ("status", "asc"),
+    "discovered": ("date_discovered", "desc"),
+}
+DEFAULT_SORT = "discovered"
+MAX_SEARCH_LENGTH = 100
 
 
 @app.template_filter("format_number")
@@ -47,10 +67,38 @@ def health():
     return jsonify(status="ok")
 
 
+def like_pattern(value):
+    escaped = value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"
+
+
 @app.get("/")
 def index():
-    filters = ["price < jita_buy_value"]
     params = {}
+    if request.args.get("unpublished"):
+        # Unpublished items usually have no market value, so don't also require a Jita profit.
+        filters = ["contains_unpublished > 0"]
+    else:
+        filters = ["price < jita_buy_value"]
+    item = request.args.get("item", "").strip()
+    if len(item) > MAX_SEARCH_LENGTH:
+        abort(400, description=f"Item search must be at most {MAX_SEARCH_LENGTH} characters")
+    if item:
+        filters.append("""(
+            top_item_name LIKE :item ESCAPE '!'
+            OR EXISTS (
+                SELECT 1 FROM contract_items
+                WHERE contract_items.contract_id = contracts.contract_id
+                AND contract_items.type_name LIKE :item ESCAPE '!'
+            )
+        )""")
+        params["item"] = like_pattern(item)
+    sort = request.args.get("sort", DEFAULT_SORT)
+    if sort not in SORT_COLUMNS:
+        abort(400, description="Unknown sort column")
+    order = request.args.get("order", SORT_COLUMNS[sort][1])
+    if order not in ("asc", "desc"):
+        abort(400, description="Sort order must be asc or desc")
     status = request.args.get("status", "active")
     if status not in ("active", "expired", "all"):
         abort(400, description="Unknown contract status")
@@ -85,12 +133,14 @@ def index():
     if page < 1:
         abort(400, description="Page must be a positive integer")
     params.update(limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE)
+    sort_expression = SORT_COLUMNS[sort][0]
+    # Only whitelisted expressions reach the SQL. Missing values go last in either direction.
     query = text(f"""
         SELECT contract_id, price, jita_buy_value, total_material_price,
                date_issued, region_name, packaged_volume, top_item_name,
-               date_discovered, status
+               date_discovered, status, contains_unpublished, unpublished_items
         FROM contracts WHERE {' AND '.join(filters)}
-        ORDER BY date_discovered DESC, contract_id DESC
+        ORDER BY {sort_expression} IS NULL, {sort_expression} {order.upper()}, contract_id DESC
         LIMIT :limit OFFSET :offset
     """)
     result = pd.read_sql_query(query, con=engine, params=params)
@@ -98,8 +148,13 @@ def index():
     result = result.iloc[:PAGE_SIZE].copy()
     result["profit"] = result["jita_buy_value"] - result["price"]
     links = {key: request.args[key] for key in FILTER_FIELDS if key in request.args}
+    sort_links = {}
+    for key, (_, default_order) in SORT_COLUMNS.items():
+        next_order = ("asc" if order == "desc" else "desc") if key == sort else default_order
+        sort_links[key] = url_for("index", **{**links, "sort": key, "order": next_order})
     return render_template(
         "index.html", result=result.to_dict("records"), page=page,
+        sort=sort, order=order, sort_links=sort_links,
         previous_url=url_for("index", **links, page=page - 1) if page > 1 else None,
         next_url=url_for("index", **links, page=page + 1) if has_next else None,
     )

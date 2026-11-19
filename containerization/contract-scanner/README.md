@@ -171,6 +171,13 @@ filters; it shows 100 results per page. Expired history is available by selectin
 the status and "Any time" discovery period. Contents are available by clicking a
 contract ID, even if the contract is no longer available in-game.
 
+Click a column header to sort by that column, and click it again to reverse the
+order. Sorting and filters are kept when you change pages. The item-name search
+matches any item in a contract, not only the most valuable one, and is not case
+sensitive. "Only unpublished items" shows contracts that contain unpublished
+items, including contracts priced above their Jita value; their item names are
+listed under the most valuable item.
+
 ## Persistence and backup
 
 Everything writable is under `APPDATA_PATH`:

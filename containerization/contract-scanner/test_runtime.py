@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import pickle
+import re
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -144,15 +145,18 @@ class BrowserTests(unittest.TestCase):
                     contract_id INTEGER, price REAL, jita_buy_value REAL,
                     total_material_price REAL, date_issued TEXT, region_name TEXT,
                     packaged_volume REAL, top_item_name TEXT, date_discovered TEXT,
-                    date_expired TEXT, status TEXT
+                    date_expired TEXT, status TEXT, contains_unpublished INTEGER,
+                    unpublished_items TEXT
                 )
             """))
             connection.execute(text("""
                 INSERT INTO contracts VALUES
                 (123, 10, 100, NULL, '2026-01-01', 'The Forge', 5,
-                 '<script>alert(1)</script>', '2026-01-02', '2026-01-30', 'active'),
+                 '<script>alert(1)</script>', '2026-01-02', '2026-01-30', 'active', 0, ''),
                 (456, 0, 100, 0, '2026-01-01', 'Domain', 50,
-                 'Ship Blueprint', '2026-01-02', '2026-01-30', 'expired')
+                 'Ship Blueprint', '2026-01-02', '2026-01-30', 'expired', 0, ''),
+                (789, 500, 0, NULL, '2026-01-01', 'Genesis', 1,
+                 NULL, '2026-01-03', '2026-01-30', 'active', 1, 'Secret 100% Item')
             """))
             connection.execute(text("""
                 CREATE TABLE contract_items (
@@ -160,6 +164,10 @@ class BrowserTests(unittest.TestCase):
                     quantity INTEGER, is_blueprint_copy INTEGER, runs INTEGER,
                     total_price REAL, total_material_price REAL
                 )
+            """))
+            connection.execute(text("""
+                INSERT INTO contract_items (contract_id, row_id, type_name) VALUES
+                (123, 0, 'Tritanium'), (123, 1, 'Pyerite'), (789, 0, 'Secret 100% Item')
             """))
         self.patcher = patch.object(contract_browser, "engine", self.engine)
         self.patcher.start()
@@ -193,8 +201,8 @@ class BrowserTests(unittest.TestCase):
         self.assertNotIn(b"Ship Blueprint", response.data)
 
     def test_contents_empty_missing_and_invalid_ids(self):
-        self.assertIn(b"No saved contents", self.client.get("/view_contract/123").data)
-        self.assertEqual(self.client.get("/view_contract/789").status_code, 404)
+        self.assertIn(b"No saved contents", self.client.get("/view_contract/456").data)
+        self.assertEqual(self.client.get("/view_contract/999").status_code, 404)
         self.assertEqual(self.client.get("/view_contract/1%20OR%201=1").status_code, 404)
         self.assertEqual(self.client.get("/healthz").json, {"status": "ok"})
 
@@ -212,6 +220,41 @@ class BrowserTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.location, "/?selected_region=The+Forge")
+
+    def contract_ids(self, **query):
+        response = self.client.get("/", query_string={"days": "0", "status": "all", **query})
+        self.assertEqual(response.status_code, 200)
+        return [int(i) for i in re.findall(rb"/view_contract/(\d+)", response.data)]
+
+    def test_sorting_by_column_and_direction(self):
+        self.assertEqual(self.contract_ids(sort="price", order="asc"), [456, 123])
+        self.assertEqual(self.contract_ids(sort="price", order="desc"), [123, 456])
+        self.assertEqual(self.contract_ids(sort="roi", order="desc"), [456, 123])  # free first
+        # NULL material cost sorts last in both directions.
+        self.assertEqual(self.contract_ids(sort="material", order="asc"), [456, 123])
+        self.assertEqual(self.contract_ids(sort="material", order="desc"), [456, 123])
+        for query in ({"sort": "price; DROP TABLE contracts"}, {"sort": "price", "order": "sideways"}):
+            with self.subTest(query=query):
+                self.assertEqual(self.client.get("/", query_string=query).status_code, 400)
+
+    def test_header_links_toggle_order_and_keep_filters(self):
+        response = self.client.get("/?days=0&item=trit&sort=price&order=asc")
+        html = response.data.decode()
+        self.assertIn('href="/?days=0&amp;item=trit&amp;sort=price&amp;order=desc"', html)
+        self.assertIn('href="/?days=0&amp;item=trit&amp;sort=region&amp;order=asc"', html)
+        self.assertIn('aria-sort="ascending"', html)
+
+    def test_item_search_matches_any_item_and_treats_wildcards_literally(self):
+        self.assertEqual(self.contract_ids(item="pyer"), [123])
+        self.assertEqual(self.contract_ids(item="blueprint"), [456])
+        self.assertEqual(self.contract_ids(item="%"), [])
+        self.assertEqual(self.client.get("/", query_string={"item": "x" * 101}).status_code, 400)
+
+    def test_unpublished_toggle_includes_unprofitable_contracts(self):
+        self.assertNotIn(789, self.contract_ids())
+        self.assertEqual(self.contract_ids(unpublished="1"), [789])
+        self.assertEqual(self.contract_ids(unpublished="1", item="100%"), [789])
+        self.assertIn(b"Unpublished: Secret 100% Item", self.client.get("/?days=0&unpublished=1").data)
 
 
 if __name__ == "__main__":

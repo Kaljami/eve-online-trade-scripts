@@ -13,6 +13,9 @@
         <p>Public contracts valued at Jita buy prices. Values are snapshots, not guaranteed profit.</p>
     </header>
     <form class="filters" method="get" action="{{ url_for('index') }}">
+        <label class="search">Item name
+            <input type="search" name="item" maxlength="100" placeholder="Search any item in the contract" value="{{ request.args.get('item', '') }}">
+        </label>
         <label>Region
             <input name="selected_region" placeholder="All regions" value="{{ request.args.get('selected_region', '') }}">
         </label>
@@ -37,22 +40,31 @@
             </select>
         </label>
         <label class="checkbox"><input type="checkbox" name="all_blueprints" value="1" {% if request.args.get('all_blueprints') %}checked{% endif %}> Hide top-item blueprints</label>
+        <label class="checkbox"><input type="checkbox" name="unpublished" value="1" {% if request.args.get('unpublished') %}checked{% endif %}> Only unpublished items</label>
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="order" value="{{ order }}">
         <button type="submit">Apply filters</button>
         <a href="{{ url_for('index') }}">Reset</a>
     </form>
-    <p>Newest discoveries first. All timestamps are UTC. Expiry is estimated; contracts may sell earlier.</p>
+    <p>Click a column header to sort; click again to reverse. "Only unpublished items" also shows contracts priced above their Jita value. All timestamps are UTC. Expiry is estimated; contracts may sell earlier.</p>
+    {% macro header(key, label) -%}
+    <th{% if sort == key %} aria-sort="{{ 'ascending' if order == 'asc' else 'descending' }}"{% endif %}>
+        <a class="sort" href="{{ sort_links[key] }}">{{ label }}{% if sort == key %} {{ '▲' if order == 'asc' else '▼' }}{% endif %}</a>
+    </th>
+    {%- endmacro %}
     <div class="table-container">
         <table>
             <thead><tr>
-                <th>Contract</th><th>Most valuable item</th><th>Region</th>
-                <th>Price (ISK)</th><th>Jita buy (ISK)</th><th>Profit (ISK)</th>
-                <th>ROI</th><th>Material cost (ISK)</th><th>Volume (m3)</th><th>Status</th><th>Discovered (UTC)</th>
+                {{ header('contract', 'Contract') }}{{ header('item', 'Most valuable item') }}{{ header('region', 'Region') }}
+                {{ header('price', 'Price (ISK)') }}{{ header('jita_buy', 'Jita buy (ISK)') }}{{ header('profit', 'Profit (ISK)') }}
+                {{ header('roi', 'ROI') }}{{ header('material', 'Material cost (ISK)') }}{{ header('volume', 'Volume (m3)') }}
+                {{ header('status', 'Status') }}{{ header('discovered', 'Discovered (UTC)') }}
             </tr></thead>
             <tbody>
             {% for row in result %}
             <tr>
                 <td><a href="{{ url_for('view_contract', contract_id=row.contract_id) }}">{{ row.contract_id }}</a></td>
-                <td>{{ row.top_item_name or '-' }}</td><td>{{ row.region_name }}</td>
+                <td>{{ row.top_item_name or '-' }}{% if row.contains_unpublished and row.contains_unpublished > 0 %}<div class="unpublished">Unpublished: {{ row.unpublished_items or row.contains_unpublished }}</div>{% endif %}</td><td>{{ row.region_name }}</td>
                 <td class="num">{{ row.price | format_number }}</td>
                 <td class="num">{{ row.jita_buy_value | format_number }}</td>
                 <td class="num profit">{{ row.profit | format_number }}</td>
